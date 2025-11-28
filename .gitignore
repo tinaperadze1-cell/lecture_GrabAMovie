@@ -26,5 +26,4 @@ Thumbs.db
 # Database
 *.db
 *.sqlite
-backend/src/db.js
 
