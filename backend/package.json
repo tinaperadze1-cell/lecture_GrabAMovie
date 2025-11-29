@@ -7,6 +7,8 @@
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "init-db": "node src/initDb.js",
+    "populate-movies": "node src/populateMovies.js",
+    "add-imdb-ratings": "node src/addImdbRatings.js",
     "test": "echo \"No automated tests yet\" && exit 0"
   },
   "keywords": [],

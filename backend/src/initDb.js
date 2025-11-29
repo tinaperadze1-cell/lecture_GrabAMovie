@@ -1,3 +1,4 @@
+require("dotenv").config();
 const { query } = require("./db");
 
 /**
@@ -15,10 +16,27 @@ async function initDatabase() {
         title VARCHAR(255) NOT NULL,
         year INTEGER NOT NULL,
         genre VARCHAR(100) NOT NULL,
+        description TEXT,
+        duration INTEGER,
+        poster_url VARCHAR(500),
+        trailer_url VARCHAR(500),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
     console.log("✅ Movies table created/verified");
+
+    // Add new columns if they don't exist (for existing databases)
+    try {
+      await query(`ALTER TABLE movies ADD COLUMN IF NOT EXISTS description TEXT`);
+      await query(`ALTER TABLE movies ADD COLUMN IF NOT EXISTS duration INTEGER`);
+      await query(`ALTER TABLE movies ADD COLUMN IF NOT EXISTS poster_url VARCHAR(500)`);
+      await query(`ALTER TABLE movies ADD COLUMN IF NOT EXISTS trailer_url VARCHAR(500)`);
+      await query(`ALTER TABLE movies ADD COLUMN IF NOT EXISTS imdb_rating DECIMAL(3,1)`);
+      console.log("✅ Movie table columns updated");
+    } catch (error) {
+      // Columns might already exist, that's okay
+      console.log("ℹ️  Movie table columns check completed");
+    }
 
     // Create users table
     await query(`
@@ -26,10 +44,26 @@ async function initDatabase() {
         id SERIAL PRIMARY KEY,
         username VARCHAR(100) UNIQUE NOT NULL,
         password VARCHAR(255) NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        email VARCHAR(255),
+        profile_picture_url VARCHAR(500),
+        theme_preference VARCHAR(50) DEFAULT 'dark',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
     console.log("✅ Users table created/verified");
+
+    // Add new columns if they don't exist (for existing databases)
+    try {
+      await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255)`);
+      await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_picture_url VARCHAR(500)`);
+      await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS theme_preference VARCHAR(50) DEFAULT 'dark'`);
+      await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`);
+      console.log("✅ User table columns updated");
+    } catch (error) {
+      // Columns might already exist, that's okay
+      console.log("ℹ️  User table columns check completed");
+    }
 
     // Create favourites table (links users to their favorite movies)
     await query(`
@@ -54,6 +88,33 @@ async function initDatabase() {
       )
     `);
     console.log("✅ Watchlist table created/verified");
+
+    // Create ratings table (users rate movies 1-5 stars)
+    await query(`
+      CREATE TABLE IF NOT EXISTS ratings (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        movie_id INTEGER NOT NULL REFERENCES movies(id) ON DELETE CASCADE,
+        rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, movie_id)
+      )
+    `);
+    console.log("✅ Ratings table created/verified");
+
+    // Create comments table (users leave written reviews/comments)
+    await query(`
+      CREATE TABLE IF NOT EXISTS comments (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        movie_id INTEGER NOT NULL REFERENCES movies(id) ON DELETE CASCADE,
+        comment_text TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    console.log("✅ Comments table created/verified");
 
     // Check if movies already exist
     const movieCount = await query("SELECT COUNT(*) FROM movies");
