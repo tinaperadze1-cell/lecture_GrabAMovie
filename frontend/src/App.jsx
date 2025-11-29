@@ -1300,10 +1300,22 @@ function App() {
                           )}
                         </div>
 
+                        {/* IMDB Rating */}
+                        {selectedMovie.imdb_rating && (
+                          <div className="movie-detail-imdb-rating">
+                            <span className="imdb-label">IMDB</span>
+                            <span className="imdb-rating-value">{selectedMovie.imdb_rating}/10</span>
+                            <span className="imdb-stars">
+                              {"★".repeat(Math.round(selectedMovie.imdb_rating / 2))}
+                            </span>
+                          </div>
+                        )}
+
                         {movieRatings[selectedMovie.id]?.average && (
                           <div className="movie-detail-rating">
+                            <span className="rating-label">User Rating</span>
                             <span className="rating-value-large">
-                              {movieRatings[selectedMovie.id].average.toFixed(1)}
+                              {movieRatings[selectedMovie.id].average.toFixed(1)}/5
                             </span>
                             <span className="rating-stars-large">
                               {"★".repeat(Math.round(movieRatings[selectedMovie.id].average))}
@@ -1516,9 +1528,17 @@ function App() {
                               <p className="meta">
                                 {movie.year} · {movie.genre}
                               </p>
+                              {/* IMDB Rating */}
+                              {movie.imdb_rating && (
+                                <div className="imdb-rating-card">
+                                  <span className="imdb-label-small">IMDB</span>
+                                  <span className="imdb-rating-small">{movie.imdb_rating}/10</span>
+                                </div>
+                              )}
                               {movieRatingData.average && (
                                 <div className="average-rating">
-                                  <span className="rating-value">{movieRatingData.average.toFixed(1)}</span>
+                                  <span className="rating-label-small">User</span>
+                                  <span className="rating-value">{movieRatingData.average.toFixed(1)}/5</span>
                                   <span className="rating-count">({movieRatingData.count} {movieRatingData.count === 1 ? 'rating' : 'ratings'})</span>
                                 </div>
                               )}

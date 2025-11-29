@@ -2,6 +2,8 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const { query } = require("./db");
+const { updateMovieRating, updateAllMovieRatings, getDailyRequestCount } = require("./imdbService");
+const { startScheduler } = require("./scheduler");
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -938,9 +940,87 @@ app.get("/api/users/:userId/comments", async (req, res) => {
   }
 });
 
+// POST /api/movies/:id/update-imdb-rating - Manually update IMDB rating for a movie
+app.post("/api/movies/:id/update-imdb-rating", async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Get movie details
+    const movieResult = await query(
+      "SELECT id, title, year FROM movies WHERE id = $1",
+      [id]
+    );
+
+    if (movieResult.rows.length === 0) {
+      return res.status(404).json({ error: "Movie not found" });
+    }
+
+    const movie = movieResult.rows[0];
+    
+    // Update rating
+    const result = await updateMovieRating(movie.id, movie.title, movie.year);
+
+    if (result.success) {
+      res.json({
+        success: true,
+        rating: result.rating,
+        message: `IMDB rating updated: ${result.rating}/10`,
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        error: result.error || "Failed to update rating",
+      });
+    }
+  } catch (error) {
+    console.error("Error updating IMDB rating:", error);
+    res.status(500).json({ error: "Failed to update IMDB rating" });
+  }
+});
+
+// POST /api/movies/update-all-imdb-ratings - Update IMDB ratings for all movies (admin endpoint)
+app.post("/api/movies/update-all-imdb-ratings", async (req, res) => {
+  try {
+    // This could be a long-running operation, so we'll start it and return immediately
+    // In production, you might want to use a job queue system
+    
+    res.json({
+      message: "IMDB rating update started. Check server logs for progress.",
+      status: "processing",
+    });
+
+    // Run update in background (don't await)
+    updateAllMovieRatings(10, 2000)
+      .then((result) => {
+        console.log("✅ Background rating update completed:", result);
+      })
+      .catch((error) => {
+        console.error("❌ Background rating update failed:", error);
+      });
+  } catch (error) {
+    console.error("Error starting IMDB rating update:", error);
+    res.status(500).json({ error: "Failed to start rating update" });
+  }
+});
+
+// GET /api/imdb/stats - Get IMDB API usage statistics
+app.get("/api/imdb/stats", async (req, res) => {
+  try {
+    const stats = getDailyRequestCount();
+    res.json(stats);
+  } catch (error) {
+    console.error("Error fetching IMDB stats:", error);
+    res.status(500).json({ error: "Failed to fetch stats" });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Backend running on http://localhost:${PORT}`);
   console.log(
     `📊 Database endpoints ready: /api/movies, /api/login, /api/signup, /api/favourites, /api/watchlist, /api/ratings, /api/comments, /api/users`
   );
+  console.log(`🎬 IMDB endpoints ready: /api/movies/:id/update-imdb-rating, /api/movies/update-all-imdb-ratings, /api/imdb/stats`);
+  
+  // Start the scheduler for automatic daily updates
+  startScheduler();
 });

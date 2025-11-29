@@ -32,6 +32,7 @@ async function initDatabase() {
       await query(`ALTER TABLE movies ADD COLUMN IF NOT EXISTS poster_url VARCHAR(500)`);
       await query(`ALTER TABLE movies ADD COLUMN IF NOT EXISTS trailer_url VARCHAR(500)`);
       await query(`ALTER TABLE movies ADD COLUMN IF NOT EXISTS imdb_rating DECIMAL(3,1)`);
+      await query(`ALTER TABLE movies ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`);
       console.log("✅ Movie table columns updated");
     } catch (error) {
       // Columns might already exist, that's okay

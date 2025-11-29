@@ -9,6 +9,7 @@
     "init-db": "node src/initDb.js",
     "populate-movies": "node src/populateMovies.js",
     "add-imdb-ratings": "node src/addImdbRatings.js",
+    "update-imdb-ratings": "node -e \"require('./src/scheduler').updateRatingsJob().then(() => process.exit(0)).catch(e => { console.error(e); process.exit(1); })\"",
     "test": "echo \"No automated tests yet\" && exit 0"
   },
   "keywords": [],
@@ -16,11 +17,13 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "axios": "^1.13.2",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.2",
+    "node-cron": "^4.2.1",
     "pg": "^8.16.3"
   },
   "devDependencies": {
