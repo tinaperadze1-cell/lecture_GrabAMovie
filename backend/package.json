@@ -7,8 +7,7 @@
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "init-db": "node src/initDb.js",
-    "populate-movies": "node src/populateMovies.js",
-    "add-imdb-ratings": "node src/addImdbRatings.js",
+    "verify-db": "node src/migrateToDatabase.js",
     "update-imdb-ratings": "node -e \"require('./src/scheduler').updateRatingsJob().then(() => process.exit(0)).catch(e => { console.error(e); process.exit(1); })\"",
     "test": "echo \"No automated tests yet\" && exit 0"
   },
