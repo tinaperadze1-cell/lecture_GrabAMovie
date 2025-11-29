@@ -178,20 +178,31 @@ async function updateMovieRating(movieId, title, year) {
  * Processes in batches to avoid overwhelming the API
  * @param {number} batchSize - Number of movies to process per batch
  * @param {number} delayMs - Delay between batches in milliseconds
+ * @param {boolean} forceUpdate - If true, update all movies regardless of last update time
  * @returns {Promise<{updated: number, failed: number, errors: Array}>}
  */
-async function updateAllMovieRatings(batchSize = 10, delayMs = 2000) {
+async function updateAllMovieRatings(batchSize = 10, delayMs = 2000, forceUpdate = false) {
   try {
     // Get all movies that need rating updates
-    // Update movies that haven't been updated in the last 24 hours
-    const movies = await query(`
-      SELECT id, title, year, imdb_rating
-      FROM movies
-      WHERE imdb_rating IS NULL 
-         OR updated_at IS NULL 
-         OR updated_at < NOW() - INTERVAL '24 hours'
-      ORDER BY id
-    `);
+    let movies;
+    if (forceUpdate) {
+      // Force update all movies
+      movies = await query(`
+        SELECT id, title, year, imdb_rating
+        FROM movies
+        ORDER BY id
+      `);
+    } else {
+      // Update movies that haven't been updated in the last 24 hours
+      movies = await query(`
+        SELECT id, title, year, imdb_rating
+        FROM movies
+        WHERE imdb_rating IS NULL 
+           OR updated_at IS NULL 
+           OR updated_at < NOW() - INTERVAL '24 hours'
+        ORDER BY id
+      `);
+    }
 
     if (movies.rows.length === 0) {
       return {
