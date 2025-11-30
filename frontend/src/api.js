@@ -579,6 +579,25 @@ export const getUserComments = async (userId) => {
   }
 };
 
+/**
+ * Get actors/cast for a movie
+ * @param {number} movieId - Movie's ID
+ * @returns {Promise<Object>} Object with movieId and actors array
+ */
+export const fetchMovieActors = async (movieId) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/movies/${movieId}/actors`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch movie actors: ${response.statusText}`);
+    }
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error("API Error - fetchMovieActors:", error);
+    throw error;
+  }
+};
+
 // Export the base URL for direct access if needed
 export { API_BASE_URL };
 

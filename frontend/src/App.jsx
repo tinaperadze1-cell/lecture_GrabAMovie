@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import "./App.css";
 import {
   fetchMovies,
@@ -24,7 +24,361 @@ import {
   updateUserProfile,
   getUserRatings as getUserRatingsHistory,
   getUserComments as getUserCommentsHistory,
+  fetchMovieActors,
 } from "./api";
+
+// Horizontal Carousel Component for Regular Movie Cards (Ratings Page)
+function HorizontalMovieCarousel({ 
+  movies, 
+  onMovieClick, 
+  loading, 
+  movieRatings,
+  favourites,
+  watchlist,
+  onFavouriteClick,
+  onWatchlistClick
+}) {
+  const [showLeftArrow, setShowLeftArrow] = useState(false);
+  const [showRightArrow, setShowRightArrow] = useState(true);
+  const scrollContainerRef = useRef(null);
+
+  const checkScrollButtons = (container) => {
+    if (!container) return;
+    const { scrollLeft, scrollWidth, clientWidth } = container;
+    const maxScroll = scrollWidth - clientWidth;
+    setShowLeftArrow(scrollLeft > 10);
+    setShowRightArrow(scrollLeft < maxScroll - 5); // Use 5px threshold for better detection
+  };
+
+  const scrollLeft = (e) => {
+    e?.stopPropagation();
+    e?.preventDefault();
+    const container = scrollContainerRef.current;
+    if (container) {
+      const scrollAmount = container.clientWidth * 0.75;
+      const currentScroll = container.scrollLeft;
+      
+      // Ensure we don't scroll past the beginning
+      const targetScroll = Math.max(currentScroll - scrollAmount, 0);
+      
+      container.scrollTo({ left: targetScroll, behavior: "smooth" });
+      setTimeout(() => checkScrollButtons(container), 300);
+    }
+  };
+
+  const scrollRight = (e) => {
+    e?.stopPropagation();
+    e?.preventDefault();
+    const container = scrollContainerRef.current;
+    if (container) {
+      const scrollAmount = container.clientWidth * 0.75;
+      const currentScroll = container.scrollLeft;
+      const maxScroll = container.scrollWidth - container.clientWidth;
+      
+      // Ensure we don't scroll past the end
+      const targetScroll = Math.min(currentScroll + scrollAmount, maxScroll);
+      
+      container.scrollTo({ left: targetScroll, behavior: "smooth" });
+      setTimeout(() => checkScrollButtons(container), 300);
+    }
+  };
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (container) {
+      checkScrollButtons(container);
+      const handleScroll = () => checkScrollButtons(container);
+      container.addEventListener("scroll", handleScroll);
+      window.addEventListener("resize", handleScroll);
+      return () => {
+        container.removeEventListener("scroll", handleScroll);
+        window.removeEventListener("resize", handleScroll);
+      };
+    }
+  }, [movies]);
+
+  if (loading) {
+    return <p className="no-movies">Loading movies...</p>;
+  }
+
+  if (!movies || movies.length === 0) {
+    return <p className="no-movies">No movies available.</p>;
+  }
+
+  return (
+    <div className="horizontal-carousel-wrapper">
+      {showLeftArrow && (
+        <button
+          className="carousel-arrow carousel-arrow-left"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            scrollLeft(e);
+          }}
+          aria-label="Scroll left"
+          type="button"
+        >
+          ‹
+        </button>
+      )}
+      <div
+        className="horizontal-carousel horizontal-carousel-movies"
+        ref={scrollContainerRef}
+        onScroll={() => checkScrollButtons(scrollContainerRef.current)}
+      >
+        {movies.map((movie) => {
+          const movieRatingData = movieRatings?.[movie.id] || { average: null, count: 0 };
+
+          return (
+            <article 
+              className="movie-card carousel-card-movie"
+              key={movie.id}
+              onClick={() => onMovieClick(movie.id)}
+              style={{ cursor: "pointer" }}
+              title="Click to view movie details"
+            >
+              <div className="movie-card-poster-container">
+                {movie.poster_url && movie.poster_url.trim() !== '' && movie.poster_url !== 'N/A' ? (
+                  <img
+                    src={movie.poster_url}
+                    alt={movie.title}
+                    className="movie-card-poster"
+                    onError={(e) => {
+                      const container = e.target.parentElement;
+                      if (container) {
+                        container.innerHTML = `<div class="movie-card-poster-placeholder"><span>🎬</span><span class="placeholder-title">${movie.title}</span></div>`;
+                      }
+                    }}
+                  />
+                ) : (
+                  <div className="movie-card-poster-placeholder">
+                    <span>🎬</span>
+                    <span className="placeholder-title">{movie.title}</span>
+                  </div>
+                )}
+              </div>
+              <div className="movie-info">
+                <p className="tag">{movie.genre}</p>
+                <div className="movie-title-row">
+                  <h3 className="movie-title-clickable" style={{ cursor: "pointer" }}>
+                    {movie.title}
+                  </h3>
+                  <div className="movie-actions" onClick={(e) => e.stopPropagation()}>
+                    {onFavouriteClick && (
+                      <button
+                        className={`favourite-btn ${favourites?.has(Number(movie.id)) ? "active" : ""}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onFavouriteClick(movie.id);
+                        }}
+                        aria-label="Add to favourites"
+                        title="Add to Favourites"
+                      >
+                        {favourites?.has(Number(movie.id)) ? "👑" : "♔"}
+                      </button>
+                    )}
+                    {onWatchlistClick && (
+                      <button
+                        className={`watchlist-btn ${watchlist?.has(Number(movie.id)) ? "active" : ""}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onWatchlistClick(movie.id);
+                        }}
+                        aria-label="Add to watchlist"
+                        title="Add to Watchlist"
+                      >
+                        {watchlist?.has(Number(movie.id)) ? "✓" : "+"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <p className="meta">{movie.year}</p>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+      {showRightArrow && (
+        <button
+          className="carousel-arrow carousel-arrow-right"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            scrollRight(e);
+          }}
+          aria-label="Scroll right"
+          type="button"
+        >
+          ›
+        </button>
+      )}
+    </div>
+  );
+}
+
+// Horizontal Carousel Component for Top Rated Movies (Home Page)
+function HorizontalCarousel({ movies, onMovieClick, loading }) {
+  const [showLeftArrow, setShowLeftArrow] = useState(false);
+  const [showRightArrow, setShowRightArrow] = useState(true);
+  const scrollContainerRef = useRef(null);
+
+  const checkScrollButtons = (container) => {
+    if (!container) return;
+    const { scrollLeft, scrollWidth, clientWidth } = container;
+    const maxScroll = scrollWidth - clientWidth;
+    setShowLeftArrow(scrollLeft > 10);
+    setShowRightArrow(scrollLeft < maxScroll - 5); // Use 5px threshold for better detection
+  };
+
+  const scrollLeft = (e) => {
+    e?.stopPropagation();
+    e?.preventDefault();
+    const container = scrollContainerRef.current;
+    if (container) {
+      const scrollAmount = container.clientWidth * 0.75;
+      const currentScroll = container.scrollLeft;
+      
+      // Ensure we don't scroll past the beginning
+      const targetScroll = Math.max(currentScroll - scrollAmount, 0);
+      
+      container.scrollTo({ left: targetScroll, behavior: "smooth" });
+      setTimeout(() => checkScrollButtons(container), 300);
+    }
+  };
+
+  const scrollRight = (e) => {
+    e?.stopPropagation();
+    e?.preventDefault();
+    const container = scrollContainerRef.current;
+    if (container) {
+      const scrollAmount = container.clientWidth * 0.75;
+      const currentScroll = container.scrollLeft;
+      const maxScroll = container.scrollWidth - container.clientWidth;
+      
+      // Ensure we don't scroll past the end
+      const targetScroll = Math.min(currentScroll + scrollAmount, maxScroll);
+      
+      container.scrollTo({ left: targetScroll, behavior: "smooth" });
+      setTimeout(() => checkScrollButtons(container), 300);
+    }
+  };
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (container) {
+      checkScrollButtons(container);
+      const handleScroll = () => checkScrollButtons(container);
+      container.addEventListener("scroll", handleScroll);
+      window.addEventListener("resize", handleScroll);
+      return () => {
+        container.removeEventListener("scroll", handleScroll);
+        window.removeEventListener("resize", handleScroll);
+      };
+    }
+  }, [movies]);
+
+  if (loading) {
+    return <p className="no-movies">Loading top-rated movies...</p>;
+  }
+
+  if (!movies || movies.length === 0) {
+    return <p className="no-movies">No movies available.</p>;
+  }
+
+  return (
+    <div className="horizontal-carousel-wrapper">
+      {showLeftArrow && (
+        <button
+          className="carousel-arrow carousel-arrow-left"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            scrollLeft(e);
+          }}
+          aria-label="Scroll left"
+          type="button"
+        >
+          ‹
+        </button>
+      )}
+      <div
+        className="horizontal-carousel"
+        ref={scrollContainerRef}
+        onScroll={() => checkScrollButtons(scrollContainerRef.current)}
+      >
+        {movies.map((movie) => {
+          const rating = movie.imdb_rating || movie.avg_user_rating;
+          const ratingValue = rating ? parseFloat(rating) : 0;
+          const stars = Math.round(ratingValue / 2);
+
+          return (
+            <div
+              key={movie.id}
+              className="top-rated-card carousel-card"
+              onClick={() => onMovieClick(movie.id)}
+            >
+              {movie.poster_url && movie.poster_url.trim() !== '' && movie.poster_url !== 'N/A' ? (
+                <img
+                  src={movie.poster_url}
+                  alt={movie.title}
+                  className="top-rated-poster"
+                  onError={(e) => {
+                    const placeholder = document.createElement('div');
+                    placeholder.className = 'top-rated-poster-placeholder';
+                    placeholder.innerHTML = `<span>🎬</span><span class="placeholder-title">${movie.title}</span>`;
+                    e.target.parentNode.replaceChild(placeholder, e.target);
+                  }}
+                />
+              ) : (
+                <div className="top-rated-poster-placeholder">
+                  <span>🎬</span>
+                  <span className="placeholder-title">{movie.title}</span>
+                </div>
+              )}
+              <div className="top-rated-info">
+                <h3 className="top-rated-title">{movie.title}</h3>
+                <div className="top-rated-meta">
+                  <span className="top-rated-year">{movie.year}</span>
+                  <span className="top-rated-genre">{movie.genre}</span>
+                </div>
+                <div className="top-rated-rating">
+                  <div className="rating-stars">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <span
+                        key={star}
+                        className={star <= stars ? "star-filled" : "star-empty"}
+                      >
+                        ★
+                      </span>
+                    ))}
+                  </div>
+                  <span className="rating-value">
+                    {ratingValue > 0 ? ratingValue.toFixed(1) : "N/A"}
+                    {movie.imdb_rating ? " (IMDB)" : " (User)"}
+                  </span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {showRightArrow && (
+        <button
+          className="carousel-arrow carousel-arrow-right"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            scrollRight(e);
+          }}
+          aria-label="Scroll right"
+          type="button"
+        >
+          ›
+        </button>
+      )}
+    </div>
+  );
+}
 
 function App() {
   const [movies, setMovies] = useState([]);
@@ -34,6 +388,8 @@ function App() {
   const [comments, setComments] = useState({}); // Comments for each movie { movieId: [comments] }
   const [commentTexts, setCommentTexts] = useState({}); // New comment input text
   const [editingComment, setEditingComment] = useState(null); // { movieId, commentId, text }
+  const [actors, setActors] = useState({}); // Actors for each movie { movieId: [actors] }
+  const [actorsLoading, setActorsLoading] = useState({}); // Loading state for actors { movieId: true/false }
   const [searchTerm, setSearchTerm] = useState("");
   const [searchQuery, setSearchQuery] = useState(""); // Search input value
   const [searchResults, setSearchResults] = useState([]); // Search results
@@ -48,6 +404,8 @@ function App() {
   const [filteredMovies, setFilteredMovies] = useState([]);
   const [selectedMovie, setSelectedMovie] = useState(null); // null = list view, movie object = detail view
   const [showProfile, setShowProfile] = useState(false);
+  const [currentPage, setCurrentPage] = useState("home"); // "home", "ratings", "watchlist", or "favorites"
+  const [previousPage, setPreviousPage] = useState("home"); // Track which page we came from before viewing movie detail
   const [userProfile, setUserProfile] = useState(null);
   const [userRatingsHistory, setUserRatingsHistory] = useState([]);
   const [userCommentsHistory, setUserCommentsHistory] = useState([]);
@@ -63,6 +421,10 @@ function App() {
   const [currentUser, setCurrentUser] = useState(null); // Store logged-in user
   const [favourites, setFavourites] = useState(new Set()); // Track favorited movie IDs
   const [watchlist, setWatchlist] = useState(new Set()); // Track watchlist movie IDs
+  const [watchlistMovies, setWatchlistMovies] = useState([]); // Full movie objects for watchlist page
+  const [watchlistLoading, setWatchlistLoading] = useState(false);
+  const [favoritesMovies, setFavoritesMovies] = useState([]); // Full movie objects for favorites page
+  const [favoritesLoading, setFavoritesLoading] = useState(false);
   const [authMode, setAuthMode] = useState("signin"); // "signin" or "signup"
   const [authError, setAuthError] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
@@ -83,9 +445,11 @@ function App() {
     const savedColor = localStorage.getItem("grabamovie_custom_color");
     return savedColor || "#6699ff";
   });
+  const [fabOpen, setFabOpen] = useState(false); // Floating Action Button open state
 
   // Available themes
   const availableThemes = [
+    { value: "normal", label: "Normal (Default)" },
     { value: "dark", label: "Dark Mode" },
     { value: "light", label: "Light Mode" },
     { value: "red", label: "Red Theme" },
@@ -96,16 +460,60 @@ function App() {
     { value: "custom", label: "Custom Color Theme" },
   ];
 
+  // Function to reset all custom CSS variables to default
+  const resetCustomTheme = () => {
+    const root = document.documentElement;
+    // Remove all custom CSS properties to return to default values from CSS
+    root.style.removeProperty('--bg-primary');
+    root.style.removeProperty('--bg-secondary');
+    root.style.removeProperty('--bg-tertiary');
+    root.style.removeProperty('--bg-card');
+    root.style.removeProperty('--bg-hero');
+    root.style.removeProperty('--bg-gradient');
+    root.style.removeProperty('--text-primary');
+    root.style.removeProperty('--text-secondary');
+    root.style.removeProperty('--text-tertiary');
+    root.style.removeProperty('--text-accent');
+    root.style.removeProperty('--text-gold');
+    root.style.removeProperty('--border-color');
+    root.style.removeProperty('--border-light');
+    root.style.removeProperty('--shadow');
+  };
+
   // Apply theme to document root
   useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
-    localStorage.setItem("grabamovie_theme", theme);
+    if (theme === "normal") {
+      // Reset to normal/default theme
+      document.documentElement.removeAttribute("data-theme");
+      resetCustomTheme();
+      // Reset custom color to default and clear from storage
+      localStorage.removeItem("grabamovie_custom_color");
+      localStorage.setItem("grabamovie_theme", "normal");
+      // Reset custom color state if it's not already default
+      if (customColor !== "#6699ff") {
+        setCustomColor("#6699ff");
+      }
+    } else {
+      document.documentElement.setAttribute("data-theme", theme);
+      localStorage.setItem("grabamovie_theme", theme);
 
-    // If custom color theme, apply custom colors
+      // If custom color theme, apply custom colors
+      if (theme === "custom") {
+        applyCustomColorTheme(customColor);
+      } else {
+        // If switching from custom to another theme, reset custom CSS variables
+        resetCustomTheme();
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [theme]);
+  
+  // Separate effect for custom color changes (only when theme is custom)
+  useEffect(() => {
     if (theme === "custom") {
       applyCustomColorTheme(customColor);
     }
-  }, [theme, customColor]);
+  }, [customColor, theme]);
 
   // Function to generate custom color theme
   const applyCustomColorTheme = (color) => {
@@ -350,6 +758,56 @@ function App() {
     loadUserData();
   }, [currentUser, isAuthenticated]);
 
+  // Load watchlist movies when watchlist page is opened
+  useEffect(() => {
+    const loadWatchlistMovies = async () => {
+      if (currentPage === "watchlist" && currentUser && isAuthenticated && watchlist.size > 0) {
+        setWatchlistLoading(true);
+        try {
+          // Fetch full movie details for all watchlist IDs
+          const moviePromises = Array.from(watchlist).map(movieId => fetchMovie(movieId));
+          const watchlistMoviesData = await Promise.all(moviePromises);
+          setWatchlistMovies(watchlistMoviesData);
+        } catch (error) {
+          console.error("Error loading watchlist movies:", error);
+          setWatchlistMovies([]);
+        } finally {
+          setWatchlistLoading(false);
+        }
+      } else if (currentPage === "watchlist" && watchlist.size === 0) {
+        setWatchlistMovies([]);
+        setWatchlistLoading(false);
+      }
+    };
+
+    loadWatchlistMovies();
+  }, [currentPage, watchlist, currentUser, isAuthenticated]);
+
+  // Load favorites movies when favorites page is opened
+  useEffect(() => {
+    const loadFavoritesMovies = async () => {
+      if (currentPage === "favorites" && currentUser && isAuthenticated && favourites.size > 0) {
+        setFavoritesLoading(true);
+        try {
+          // Fetch full movie details for all favorites IDs
+          const moviePromises = Array.from(favourites).map(movieId => fetchMovie(movieId));
+          const favoritesMoviesData = await Promise.all(moviePromises);
+          setFavoritesMovies(favoritesMoviesData);
+        } catch (error) {
+          console.error("Error loading favorites movies:", error);
+          setFavoritesMovies([]);
+        } finally {
+          setFavoritesLoading(false);
+        }
+      } else if (currentPage === "favorites" && favourites.size === 0) {
+        setFavoritesMovies([]);
+        setFavoritesLoading(false);
+      }
+    };
+
+    loadFavoritesMovies();
+  }, [currentPage, favourites, currentUser, isAuthenticated]);
+
   const handleRating = async (movieId, rating) => {
     if (!currentUser) {
       alert("Please sign in to rate movies");
@@ -403,6 +861,10 @@ function App() {
           newSet.delete(Number(movieId));
           return newSet;
         });
+        // Remove from favoritesMovies if on favorites page
+        if (currentPage === "favorites") {
+          setFavoritesMovies((prev) => prev.filter(movie => movie.id !== Number(movieId)));
+        }
         alert("Removed from Favourites");
       } else {
         // Add to favourites
@@ -433,6 +895,10 @@ function App() {
           newSet.delete(Number(movieId));
           return newSet;
         });
+        // Remove from watchlistMovies if on watchlist page
+        if (currentPage === "watchlist") {
+          setWatchlistMovies((prev) => prev.filter(movie => movie.id !== Number(movieId)));
+        }
         alert("Removed from Watchlist");
       } else {
         // Add to watchlist
@@ -543,9 +1009,24 @@ function App() {
 
   const handleMovieClick = async (movieId) => {
     try {
+      // Save the current page before showing movie detail
+      setPreviousPage(currentPage);
+      
       // Fetch full movie details
       const movie = await fetchMovie(movieId);
       setSelectedMovie(movie);
+
+      // Fetch actors for the movie
+      setActorsLoading((prev) => ({ ...prev, [movieId]: true }));
+      try {
+        const actorsData = await fetchMovieActors(movieId);
+        setActors((prev) => ({ ...prev, [movieId]: actorsData.actors || [] }));
+      } catch (actorError) {
+        console.error("Error fetching actors:", actorError);
+        setActors((prev) => ({ ...prev, [movieId]: [] })); // Set empty array on error
+      } finally {
+        setActorsLoading((prev) => ({ ...prev, [movieId]: false }));
+      }
 
       // Scroll to top
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -559,6 +1040,117 @@ function App() {
     setSelectedMovie(null);
     setShowProfile(false);
     setProfileEditMode(false);
+    // Return to the page we came from before viewing the movie
+    setCurrentPage(previousPage);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  // Dynamic mood-based backgrounds based on selected movie genre
+  useEffect(() => {
+    const root = document.documentElement;
+    const body = document.body;
+    
+    if (selectedMovie && selectedMovie.genre) {
+      const genre = selectedMovie.genre.toLowerCase().trim();
+      
+      // Map genres to mood backgrounds - comprehensive genre matching
+      let moodClass = "";
+      
+      // Crime (dark red, gloomy - similar to horror)
+      if (genre === "crime" || genre.includes("crime")) {
+        moodClass = "mood-crime";
+      }
+      // Horror/Thriller (dark red, black, gray)
+      else if (genre === "horror" || genre === "thriller" || genre.includes("horror") || genre.includes("thriller")) {
+        moodClass = "mood-horror";
+      }
+      // Romance (soft pink, warm)
+      else if (genre === "romance" || genre === "romantic" || genre.includes("romance") || genre.includes("romantic")) {
+        moodClass = "mood-romance";
+      }
+      // Sci-Fi/Fantasy (neon blue, cyan)
+      else if (genre === "sci-fi" || genre === "science fiction" || genre === "fantasy" || 
+               genre.includes("sci-fi") || genre.includes("science") || genre.includes("fantasy")) {
+        moodClass = "mood-scifi";
+      }
+      // Action/Adventure (metallic, sharp gradients)
+      else if (genre === "action" || genre === "adventure" || genre.includes("action") || genre.includes("adventure")) {
+        moodClass = "mood-action";
+      }
+      // Comedy (warm yellow, bright)
+      else if (genre === "comedy" || genre.includes("comedy")) {
+        moodClass = "mood-comedy";
+      }
+      // Drama (deep purple, moody)
+      else if (genre === "drama" || genre.includes("drama")) {
+        moodClass = "mood-drama";
+      }
+      // Default fallback
+      else {
+        moodClass = "mood-default";
+      }
+      
+      root.setAttribute("data-mood", moodClass);
+      body.setAttribute("data-mood", moodClass);
+      
+      console.log(`🎨 Applied mood background: ${moodClass} for genre: "${selectedMovie.genre}"`);
+    } else {
+      root.removeAttribute("data-mood");
+      body.removeAttribute("data-mood");
+    }
+    
+    return () => {
+      // Cleanup on unmount
+      root.removeAttribute("data-mood");
+      body.removeAttribute("data-mood");
+    };
+  }, [selectedMovie]);
+
+  const handleHomeClick = (e) => {
+    e.preventDefault();
+    // Close profile and selected movie views
+    setShowProfile(false);
+    setSelectedMovie(null);
+    setProfileEditMode(false);
+    // Switch to home page
+    setCurrentPage("home");
+    // Scroll to top
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleRatingsClick = (e) => {
+    e.preventDefault();
+    // Close profile and selected movie views
+    setShowProfile(false);
+    setSelectedMovie(null);
+    setProfileEditMode(false);
+    // Switch to ratings page
+    setCurrentPage("ratings");
+    // Scroll to top
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleWatchlistPageClick = (e) => {
+    e.preventDefault();
+    // Close profile and selected movie views
+    setShowProfile(false);
+    setProfileEditMode(false);
+    setSelectedMovie(null);
+    // Switch to watchlist page
+    setCurrentPage("watchlist");
+    // Scroll to top
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleFavoritesPageClick = (e) => {
+    e.preventDefault();
+    // Close profile and selected movie views
+    setShowProfile(false);
+    setProfileEditMode(false);
+    setSelectedMovie(null);
+    // Switch to favorites page
+    setCurrentPage("favorites");
+    // Scroll to top
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -590,6 +1182,9 @@ function App() {
       if (savedTheme === "custom") {
         const savedColor = localStorage.getItem("grabamovie_custom_color") || "#6699ff";
         setCustomColor(savedColor);
+      } else if (savedTheme === "normal") {
+        // Reset custom color for normal theme
+        setCustomColor("#6699ff");
       }
 
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -641,6 +1236,10 @@ function App() {
         if (updateData.themePreference === "custom") {
           const savedColor = localStorage.getItem("grabamovie_custom_color") || customColor;
           setCustomColor(savedColor);
+        } else if (updateData.themePreference === "normal") {
+          // Reset custom color when switching to normal
+          setCustomColor("#6699ff");
+          localStorage.removeItem("grabamovie_custom_color");
         }
       }
 
@@ -807,19 +1406,23 @@ function App() {
         <header className="site-header">
           <div className="brand">GRABAMOVIE</div>
           <nav>
-            <a href="#hero">Home</a>
-            <a href="#ratings">Ratings</a>
+            <a href="#hero" onClick={handleHomeClick}>Home</a>
+            <a href="#ratings" onClick={handleRatingsClick}>Ratings</a>
             {isAuthenticated && currentUser && (
-              <a
-                href="#profile"
-                onClick={(e) => {
-                  e.preventDefault();
-                  handleProfileClick();
-                }}
-                className="nav-edit-link"
-              >
-                Edit
-              </a>
+              <>
+                <a href="#watchlist" onClick={handleWatchlistPageClick}>Watchlist</a>
+                <a href="#favorites" onClick={handleFavoritesPageClick}>Favorites</a>
+                <a
+                  href="#profile"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleProfileClick();
+                  }}
+                  className="nav-edit-link"
+                >
+                  Edit
+                </a>
+              </>
             )}
             <div className="search-container">
               <input
@@ -1070,6 +1673,10 @@ function App() {
                         setProfileForm((prev) => ({ ...prev, themePreference: newTheme }));
                         // Preview theme change immediately
                         setTheme(newTheme);
+                        // If switching to normal, reset custom color
+                        if (newTheme === "normal") {
+                          setCustomColor("#6699ff");
+                        }
                       }}
                     >
                       {availableThemes.map((themeOption) => (
@@ -1120,7 +1727,257 @@ function App() {
                 </div>
               </div>
             </section>
-          ) : (
+          ) : selectedMovie ? (
+            <section className="movie-detail-area">
+              <button className="back-btn" onClick={handleBackToList}>
+                ← Back to Movies
+              </button>
+
+              <div className="movie-detail">
+                <div className="movie-detail-header">
+                  {selectedMovie.poster_url ? (
+                    <img
+                      src={selectedMovie.poster_url}
+                      alt={selectedMovie.title}
+                      className="movie-poster"
+                      onError={(e) => {
+                        e.target.style.display = "none";
+                      }}
+                    />
+                  ) : (
+                    <div className="movie-poster-placeholder">
+                      <span>No Poster</span>
+                    </div>
+                  )}
+
+                  <div className="movie-detail-info">
+                    <div className="movie-detail-title-row">
+                      <h1>{selectedMovie.title}</h1>
+                      <div className="movie-detail-actions">
+                        <button
+                          className={`favourite-btn ${favourites.has(Number(selectedMovie.id)) ? "active" : ""}`}
+                          onClick={() => handleFavouriteClick(selectedMovie.id)}
+                          aria-label="Add to favourites"
+                          title="Add to Favourites"
+                        >
+                          {favourites.has(Number(selectedMovie.id)) ? "👑" : "♔"}
+                        </button>
+                        <button
+                          className={`watchlist-btn ${watchlist.has(Number(selectedMovie.id)) ? "active" : ""}`}
+                          onClick={() => handleWatchlistClick(selectedMovie.id)}
+                          aria-label="Add to watchlist"
+                          title="Add to Watchlist"
+                        >
+                          {watchlist.has(Number(selectedMovie.id)) ? "✓" : "+"}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="movie-detail-meta">
+                      <span className="movie-year">{selectedMovie.year}</span>
+                      <span className="movie-separator">·</span>
+                      <span className="movie-genre">{selectedMovie.genre}</span>
+                      {selectedMovie.duration && (
+                        <>
+                          <span className="movie-separator">·</span>
+                          <span className="movie-duration">{selectedMovie.duration} min</span>
+                        </>
+                      )}
+                    </div>
+
+                    {/* IMDB Rating */}
+                    {selectedMovie.imdb_rating && (
+                      <div className="movie-detail-imdb-rating">
+                        <span className="imdb-label">IMDB</span>
+                        <span className="imdb-rating-value">{selectedMovie.imdb_rating}/10</span>
+                        <span className="imdb-stars">
+                          {"★".repeat(Math.round(selectedMovie.imdb_rating / 2))}
+                        </span>
+                      </div>
+                    )}
+
+                    {movieRatings[selectedMovie.id]?.average && (
+                      <div className="movie-detail-rating">
+                        <span className="rating-label">User Rating</span>
+                        <span className="rating-value-large">
+                          {movieRatings[selectedMovie.id].average.toFixed(1)}/5
+                        </span>
+                        <span className="rating-stars-large">
+                          {"★".repeat(Math.round(movieRatings[selectedMovie.id].average))}
+                        </span>
+                        <span className="rating-count-large">
+                          ({movieRatings[selectedMovie.id].count} {movieRatings[selectedMovie.id].count === 1 ? 'rating' : 'ratings'})
+                        </span>
+                      </div>
+                    )}
+
+                    {selectedMovie.trailer_url && (
+                      <a
+                        href={selectedMovie.trailer_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="trailer-btn"
+                      >
+                        ▶ Watch Trailer
+                      </a>
+                    )}
+                  </div>
+                </div>
+
+                {selectedMovie.description && (
+                  <div className="movie-description">
+                    <h3>Description</h3>
+                    <p>{selectedMovie.description}</p>
+                  </div>
+                )}
+
+                {/* Actors Section */}
+                {actors[selectedMovie.id] && actors[selectedMovie.id].length > 0 && (
+                  <div className="movie-actors-section">
+                    <h3>Cast</h3>
+                    <div className="actors-grid">
+                      {actors[selectedMovie.id].map((actor, index) => (
+                        <div key={index} className="actor-card">
+                          {actor.profilePhoto ? (
+                            <img
+                              src={actor.profilePhoto}
+                              alt={actor.name}
+                              className="actor-photo"
+                              onError={(e) => {
+                                e.target.style.display = "none";
+                              }}
+                            />
+                          ) : (
+                            <div className="actor-photo-placeholder">
+                              <span>{actor.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}</span>
+                            </div>
+                          )}
+                          <div className="actor-info">
+                            <div className="actor-name">{actor.name}</div>
+                            {actor.character && (
+                              <div className="actor-character">{actor.character}</div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {actorsLoading[selectedMovie.id] && (
+                  <div className="movie-actors-section">
+                    <h3>Cast</h3>
+                    <div className="actors-loading">Loading cast...</div>
+                  </div>
+                )}
+
+                <div className="movie-detail-rating-section">
+                  <h3>Your Rating</h3>
+                  <div className="star-row-large">{renderStars(selectedMovie.id)}</div>
+                </div>
+
+                <div className="movie-detail-comments">
+                  <h3>Comments</h3>
+
+                  {isAuthenticated && (
+                    <div className="comment-input-container">
+                      <textarea
+                        className="comment-input"
+                        placeholder="Write a comment..."
+                        value={commentTexts[selectedMovie.id] || ""}
+                        onChange={(e) =>
+                          setCommentTexts((prev) => ({
+                            ...prev,
+                            [selectedMovie.id]: e.target.value,
+                          }))
+                        }
+                        rows={3}
+                      />
+                      <button
+                        className="comment-submit-btn"
+                        onClick={() => handleCommentSubmit(selectedMovie.id)}
+                      >
+                        Post Comment
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="comments-list">
+                    {comments[selectedMovie.id]?.length === 0 ? (
+                      <p className="no-comments">No comments yet. Be the first to comment!</p>
+                    ) : (
+                      (comments[selectedMovie.id] || []).map((comment) => {
+                        const isOwnComment = currentUser && comment.user_id === currentUser.id;
+                        const isEditing = editingComment?.movieId === selectedMovie.id && editingComment?.commentId === comment.id;
+
+                        return (
+                          <div key={comment.id} className="comment-item">
+                            {isEditing ? (
+                              <div className="comment-edit-form">
+                                <textarea
+                                  className="comment-edit-input"
+                                  value={editingComment.text}
+                                  onChange={(e) =>
+                                    setEditingComment((prev) => ({
+                                      ...prev,
+                                      text: e.target.value,
+                                    }))
+                                  }
+                                  rows={3}
+                                />
+                                <div className="comment-edit-actions">
+                                  <button
+                                    className="comment-save-btn"
+                                    onClick={handleCommentUpdate}
+                                  >
+                                    Save
+                                  </button>
+                                  <button
+                                    className="comment-cancel-btn"
+                                    onClick={() => setEditingComment(null)}
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="comment-header">
+                                  <span className="comment-author">{comment.username}</span>
+                                  <span className="comment-date">
+                                    {new Date(comment.created_at).toLocaleDateString()}
+                                  </span>
+                                </div>
+                                <p className="comment-text">{comment.comment_text}</p>
+                                {isOwnComment && (
+                                  <div className="comment-actions">
+                                    <button
+                                      className="comment-edit-btn"
+                                      onClick={() =>
+                                        handleCommentEdit(selectedMovie.id, comment.id, comment.comment_text)
+                                      }
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      className="comment-delete-btn"
+                                      onClick={() => handleCommentDelete(selectedMovie.id, comment.id)}
+                                    >
+                                      Delete
+                                    </button>
+                                  </div>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </div>
+            </section>
+          ) : currentPage === "home" ? (
             <>
               <section className="hero-grid" id="hero">
                 <div className="hero-content">
@@ -1133,7 +1990,14 @@ function App() {
                     alive.
                   </p>
                   <div className="hero-actions">
-                    <a className="primary-btn" href="#ratings">
+                    <a 
+                      className="primary-btn" 
+                      href="#ratings"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        handleRatingsClick(e);
+                      }}
+                    >
                       Start rating
                     </a>
                     <button className="secondary-btn" type="button" disabled>
@@ -1171,7 +2035,7 @@ function App() {
                 </aside>
               </section>
 
-              {/* Top Rated Movies Section */}
+              {/* Top Rated Movies Section - Horizontal Scroll */}
               <section className="top-rated-section" id="top-rated">
                 <div className="rating-top">
                   <div>
@@ -1183,277 +2047,15 @@ function App() {
                   </div>
                 </div>
 
-                <div className="top-rated-grid">
-                  {topRatedMovies.length === 0 ? (
-                    <p className="no-movies">Loading top-rated movies...</p>
-                  ) : (
-                    topRatedMovies.map((movie) => {
-                      const rating = movie.imdb_rating || movie.avg_user_rating;
-                      const ratingValue = rating ? parseFloat(rating) : 0;
-                      const stars = Math.round(ratingValue / 2); // Convert 10-point scale to 5 stars
-
-                      return (
-                        <div
-                          key={movie.id}
-                          className="top-rated-card"
-                          onClick={() => handleMovieClick(movie.id)}
-                        >
-                          {movie.poster_url ? (
-                            <img
-                              src={movie.poster_url}
-                              alt={movie.title}
-                              className="top-rated-poster"
-                              onError={(e) => {
-                                e.target.style.display = "none";
-                              }}
-                            />
-                          ) : (
-                            <div className="top-rated-poster-placeholder">
-                              <span>🎬</span>
-                            </div>
-                          )}
-                          <div className="top-rated-info">
-                            <h3 className="top-rated-title">{movie.title}</h3>
-                            <div className="top-rated-meta">
-                              <span className="top-rated-year">{movie.year}</span>
-                              <span className="top-rated-genre">{movie.genre}</span>
-                            </div>
-                            <div className="top-rated-rating">
-                              <div className="rating-stars">
-                                {[1, 2, 3, 4, 5].map((star) => (
-                                  <span
-                                    key={star}
-                                    className={star <= stars ? "star-filled" : "star-empty"}
-                                  >
-                                    ★
-                                  </span>
-                                ))}
-                              </div>
-                              <span className="rating-value">
-                                {ratingValue > 0 ? ratingValue.toFixed(1) : "N/A"}
-                                {movie.imdb_rating ? " (IMDB)" : " (User)"}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
+                <HorizontalCarousel
+                  movies={topRatedMovies}
+                  onMovieClick={handleMovieClick}
+                  loading={topRatedMovies.length === 0}
+                />
               </section>
-
-              {selectedMovie ? (
-                <section className="movie-detail-area">
-                  <button className="back-btn" onClick={handleBackToList}>
-                    ← Back to Movies
-                  </button>
-
-                  <div className="movie-detail">
-                    <div className="movie-detail-header">
-                      {selectedMovie.poster_url ? (
-                        <img
-                          src={selectedMovie.poster_url}
-                          alt={selectedMovie.title}
-                          className="movie-poster"
-                          onError={(e) => {
-                            e.target.style.display = "none";
-                          }}
-                        />
-                      ) : (
-                        <div className="movie-poster-placeholder">
-                          <span>No Poster</span>
-                        </div>
-                      )}
-
-                      <div className="movie-detail-info">
-                        <div className="movie-detail-title-row">
-                          <h1>{selectedMovie.title}</h1>
-                          <div className="movie-detail-actions">
-                            <button
-                              className={`favourite-btn ${favourites.has(Number(selectedMovie.id)) ? "active" : ""}`}
-                              onClick={() => handleFavouriteClick(selectedMovie.id)}
-                              aria-label="Add to favourites"
-                              title="Add to Favourites"
-                            >
-                              {favourites.has(Number(selectedMovie.id)) ? "👑" : "♔"}
-                            </button>
-                            <button
-                              className={`watchlist-btn ${watchlist.has(Number(selectedMovie.id)) ? "active" : ""}`}
-                              onClick={() => handleWatchlistClick(selectedMovie.id)}
-                              aria-label="Add to watchlist"
-                              title="Add to Watchlist"
-                            >
-                              {watchlist.has(Number(selectedMovie.id)) ? "✓" : "+"}
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="movie-detail-meta">
-                          <span className="movie-year">{selectedMovie.year}</span>
-                          <span className="movie-separator">·</span>
-                          <span className="movie-genre">{selectedMovie.genre}</span>
-                          {selectedMovie.duration && (
-                            <>
-                              <span className="movie-separator">·</span>
-                              <span className="movie-duration">{selectedMovie.duration} min</span>
-                            </>
-                          )}
-                        </div>
-
-                        {/* IMDB Rating */}
-                        {selectedMovie.imdb_rating && (
-                          <div className="movie-detail-imdb-rating">
-                            <span className="imdb-label">IMDB</span>
-                            <span className="imdb-rating-value">{selectedMovie.imdb_rating}/10</span>
-                            <span className="imdb-stars">
-                              {"★".repeat(Math.round(selectedMovie.imdb_rating / 2))}
-                            </span>
-                          </div>
-                        )}
-
-                        {movieRatings[selectedMovie.id]?.average && (
-                          <div className="movie-detail-rating">
-                            <span className="rating-label">User Rating</span>
-                            <span className="rating-value-large">
-                              {movieRatings[selectedMovie.id].average.toFixed(1)}/5
-                            </span>
-                            <span className="rating-stars-large">
-                              {"★".repeat(Math.round(movieRatings[selectedMovie.id].average))}
-                            </span>
-                            <span className="rating-count-large">
-                              ({movieRatings[selectedMovie.id].count} {movieRatings[selectedMovie.id].count === 1 ? 'rating' : 'ratings'})
-                            </span>
-                          </div>
-                        )}
-
-                        {selectedMovie.trailer_url && (
-                          <a
-                            href={selectedMovie.trailer_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="trailer-btn"
-                          >
-                            ▶ Watch Trailer
-                          </a>
-                        )}
-                      </div>
-                    </div>
-
-                    {selectedMovie.description && (
-                      <div className="movie-description">
-                        <h3>Description</h3>
-                        <p>{selectedMovie.description}</p>
-                      </div>
-                    )}
-
-                    <div className="movie-detail-rating-section">
-                      <h3>Your Rating</h3>
-                      <div className="star-row-large">{renderStars(selectedMovie.id)}</div>
-                    </div>
-
-                    <div className="movie-detail-comments">
-                      <h3>Comments</h3>
-
-                      {isAuthenticated && (
-                        <div className="comment-input-container">
-                          <textarea
-                            className="comment-input"
-                            placeholder="Write a comment..."
-                            value={commentTexts[selectedMovie.id] || ""}
-                            onChange={(e) =>
-                              setCommentTexts((prev) => ({
-                                ...prev,
-                                [selectedMovie.id]: e.target.value,
-                              }))
-                            }
-                            rows={3}
-                          />
-                          <button
-                            className="comment-submit-btn"
-                            onClick={() => handleCommentSubmit(selectedMovie.id)}
-                          >
-                            Post Comment
-                          </button>
-                        </div>
-                      )}
-
-                      <div className="comments-list">
-                        {comments[selectedMovie.id]?.length === 0 ? (
-                          <p className="no-comments">No comments yet. Be the first to comment!</p>
-                        ) : (
-                          (comments[selectedMovie.id] || []).map((comment) => {
-                            const isOwnComment = currentUser && comment.user_id === currentUser.id;
-                            const isEditing = editingComment?.movieId === selectedMovie.id && editingComment?.commentId === comment.id;
-
-                            return (
-                              <div key={comment.id} className="comment-item">
-                                {isEditing ? (
-                                  <div className="comment-edit-form">
-                                    <textarea
-                                      className="comment-edit-input"
-                                      value={editingComment.text}
-                                      onChange={(e) =>
-                                        setEditingComment((prev) => ({
-                                          ...prev,
-                                          text: e.target.value,
-                                        }))
-                                      }
-                                      rows={3}
-                                    />
-                                    <div className="comment-edit-actions">
-                                      <button
-                                        className="comment-save-btn"
-                                        onClick={handleCommentUpdate}
-                                      >
-                                        Save
-                                      </button>
-                                      <button
-                                        className="comment-cancel-btn"
-                                        onClick={() => setEditingComment(null)}
-                                      >
-                                        Cancel
-                                      </button>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <>
-                                    <div className="comment-header">
-                                      <span className="comment-author">{comment.username}</span>
-                                      <span className="comment-date">
-                                        {new Date(comment.created_at).toLocaleDateString()}
-                                      </span>
-                                    </div>
-                                    <p className="comment-text">{comment.comment_text}</p>
-                                    {isOwnComment && (
-                                      <div className="comment-actions">
-                                        <button
-                                          className="comment-edit-btn"
-                                          onClick={() =>
-                                            handleCommentEdit(selectedMovie.id, comment.id, comment.comment_text)
-                                          }
-                                        >
-                                          Edit
-                                        </button>
-                                        <button
-                                          className="comment-delete-btn"
-                                          onClick={() => handleCommentDelete(selectedMovie.id, comment.id)}
-                                        >
-                                          Delete
-                                        </button>
-                                      </div>
-                                    )}
-                                  </>
-                                )}
-                              </div>
-                            );
-                          })
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </section>
-              ) : (
-                <section className="rating-area" id="ratings">
+            </>
+          ) : currentPage === "ratings" ? (
+            <section className="rating-area" id="ratings">
                   <div className="rating-top">
                     <div>
                       <p className="section-label">Fresh Picks</p>
@@ -1476,188 +2078,199 @@ function App() {
                     </div>
                   </div>
 
-                  <div className="movie-grid">
-                    {moviesLoading ? (
-                      <p style={{ gridColumn: "1 / -1", textAlign: "center", color: "#9ec9ff" }}>
-                        Loading movies from database...
-                      </p>
-                    ) : filteredMovies.length === 0 ? (
-                      <p style={{ gridColumn: "1 / -1", textAlign: "center", color: "#ff8f8f" }}>
-                        {movies.length === 0
-                          ? "No movies found. Make sure the backend is running and database is initialized."
-                          : "No movies match your filters. Try adjusting your filter criteria."}
-                      </p>
-                    ) : (
-                      filteredMovies.map((movie) => {
-                        const movieRatingData = movieRatings[movie.id] || { average: null, count: 0 };
-                        const movieComments = comments[movie.id] || [];
-                        const isEditingThisMovie = editingComment?.movieId === movie.id;
-
-                        return (
-                          <article className="movie-card" key={movie.id}>
-                            <div className="movie-info">
-                              <p className="tag">{movie.genre}</p>
-                              <div className="movie-title-row">
-                                <h3
-                                  className="movie-title-clickable"
-                                  onClick={() => handleMovieClick(movie.id)}
-                                  style={{ cursor: "pointer" }}
-                                  title="Click to view details"
-                                >
-                                  {movie.title}
-                                </h3>
-                                <div className="movie-actions">
-                                  <button
-                                    className={`favourite-btn ${favourites.has(Number(movie.id)) ? "active" : ""}`}
-                                    onClick={() => handleFavouriteClick(movie.id)}
-                                    aria-label="Add to favourites"
-                                    title="Add to Favourites"
-                                  >
-                                    {favourites.has(Number(movie.id)) ? "👑" : "♔"}
-                                  </button>
-                                  <button
-                                    className={`watchlist-btn ${watchlist.has(Number(movie.id)) ? "active" : ""}`}
-                                    onClick={() => handleWatchlistClick(movie.id)}
-                                    aria-label="Add to watchlist"
-                                    title="Add to Watchlist"
-                                  >
-                                    {watchlist.has(Number(movie.id)) ? "✓" : "+"}
-                                  </button>
-                                </div>
-                              </div>
-                              <p className="meta">
-                                {movie.year} · {movie.genre}
-                              </p>
-                              {/* IMDB Rating */}
-                              {movie.imdb_rating && (
-                                <div className="imdb-rating-card">
-                                  <span className="imdb-label-small">IMDB</span>
-                                  <span className="imdb-rating-small">{movie.imdb_rating}/10</span>
-                                </div>
-                              )}
-                              {movieRatingData.average && (
-                                <div className="average-rating">
-                                  <span className="rating-label-small">User</span>
-                                  <span className="rating-value">{movieRatingData.average.toFixed(1)}/5</span>
-                                  <span className="rating-count">({movieRatingData.count} {movieRatingData.count === 1 ? 'rating' : 'ratings'})</span>
-                                </div>
-                              )}
-                            </div>
-                            <div className="star-row">{renderStars(movie.id)}</div>
-
-                            {/* Comments Section */}
-                            <div className="comments-section">
-                              <h4 className="comments-title">Comments</h4>
-
-                              {/* Comment Input */}
-                              {isAuthenticated && (
-                                <div className="comment-input-container">
-                                  <textarea
-                                    className="comment-input"
-                                    placeholder="Write a comment..."
-                                    value={commentTexts[movie.id] || ""}
-                                    onChange={(e) =>
-                                      setCommentTexts((prev) => ({
-                                        ...prev,
-                                        [movie.id]: e.target.value,
-                                      }))
-                                    }
-                                    rows={3}
-                                  />
-                                  <button
-                                    className="comment-submit-btn"
-                                    onClick={() => handleCommentSubmit(movie.id)}
-                                  >
-                                    Post Comment
-                                  </button>
-                                </div>
-                              )}
-
-                              {/* Comments List */}
-                              <div className="comments-list">
-                                {movieComments.length === 0 ? (
-                                  <p className="no-comments">No comments yet. Be the first to comment!</p>
-                                ) : (
-                                  movieComments.map((comment) => {
-                                    const isOwnComment = currentUser && comment.user_id === currentUser.id;
-                                    const isEditing = isEditingThisMovie && editingComment?.commentId === comment.id;
-
-                                    return (
-                                      <div key={comment.id} className="comment-item">
-                                        {isEditing ? (
-                                          <div className="comment-edit-form">
-                                            <textarea
-                                              className="comment-edit-input"
-                                              value={editingComment.text}
-                                              onChange={(e) =>
-                                                setEditingComment((prev) => ({
-                                                  ...prev,
-                                                  text: e.target.value,
-                                                }))
-                                              }
-                                              rows={3}
-                                            />
-                                            <div className="comment-edit-actions">
-                                              <button
-                                                className="comment-save-btn"
-                                                onClick={handleCommentUpdate}
-                                              >
-                                                Save
-                                              </button>
-                                              <button
-                                                className="comment-cancel-btn"
-                                                onClick={() => setEditingComment(null)}
-                                              >
-                                                Cancel
-                                              </button>
-                                            </div>
-                                          </div>
-                                        ) : (
-                                          <>
-                                            <div className="comment-header">
-                                              <span className="comment-author">{comment.username}</span>
-                                              <span className="comment-date">
-                                                {new Date(comment.created_at).toLocaleDateString()}
-                                              </span>
-                                            </div>
-                                            <p className="comment-text">{comment.comment_text}</p>
-                                            {isOwnComment && (
-                                              <div className="comment-actions">
-                                                <button
-                                                  className="comment-edit-btn"
-                                                  onClick={() =>
-                                                    handleCommentEdit(movie.id, comment.id, comment.comment_text)
-                                                  }
-                                                >
-                                                  Edit
-                                                </button>
-                                                <button
-                                                  className="comment-delete-btn"
-                                                  onClick={() => handleCommentDelete(movie.id, comment.id)}
-                                                >
-                                                  Delete
-                                                </button>
-                                              </div>
-                                            )}
-                                          </>
-                                        )}
-                                      </div>
-                                    );
-                                  })
-                                )}
-                              </div>
-                            </div>
-                          </article>
-                        );
-                      })
-                    )}
-                  </div>
+                  {/* Horizontal Scrolling Movie Carousel */}
+                  {moviesLoading ? (
+                    <p style={{ textAlign: "center", color: "#9ec9ff", padding: "2rem" }}>
+                      Loading movies from database...
+                    </p>
+                  ) : filteredMovies.length === 0 ? (
+                    <p style={{ textAlign: "center", color: "#ff8f8f", padding: "2rem" }}>
+                      {movies.length === 0
+                        ? "No movies found. Make sure the backend is running and database is initialized."
+                        : "No movies match your filters. Try adjusting your filter criteria."}
+                    </p>
+                  ) : (
+                    <HorizontalMovieCarousel
+                      movies={filteredMovies}
+                      onMovieClick={handleMovieClick}
+                      loading={moviesLoading}
+                      movieRatings={movieRatings}
+                      favourites={favourites}
+                      watchlist={watchlist}
+                      onFavouriteClick={handleFavouriteClick}
+                      onWatchlistClick={handleWatchlistClick}
+                    />
+                  )}
                 </section>
+          ) : currentPage === "watchlist" ? (
+            <section className="rating-area" id="watchlist">
+              <div className="rating-top">
+                <div>
+                  <p className="section-label">My Watchlist</p>
+                  <h2>Movies I Want to Watch</h2>
+                  <p>
+                    Your personal collection of movies you&apos;ve saved for later.
+                  </p>
+                </div>
+              </div>
+
+              {/* Horizontal Scrolling Watchlist Carousel */}
+              {!isAuthenticated || !currentUser ? (
+                <p style={{ textAlign: "center", color: "#ff8f8f", padding: "2rem" }}>
+                  Please sign in to view your watchlist.
+                </p>
+              ) : watchlistLoading ? (
+                <p style={{ textAlign: "center", color: "#9ec9ff", padding: "2rem" }}>
+                  Loading your watchlist...
+                </p>
+              ) : watchlistMovies.length === 0 ? (
+                <p style={{ textAlign: "center", color: "#ff8f8f", padding: "2rem" }}>
+                  Your watchlist is empty. Add movies to your watchlist to see them here!
+                </p>
+              ) : (
+                <HorizontalMovieCarousel
+                  movies={watchlistMovies}
+                  onMovieClick={handleMovieClick}
+                  loading={watchlistLoading}
+                  movieRatings={movieRatings}
+                  favourites={favourites}
+                  watchlist={watchlist}
+                  onFavouriteClick={handleFavouriteClick}
+                  onWatchlistClick={handleWatchlistClick}
+                />
               )}
-            </>
-          )}
+            </section>
+          ) : currentPage === "favorites" ? (
+            <section className="rating-area" id="favorites">
+              <div className="rating-top">
+                <div>
+                  <p className="section-label">My Favorites</p>
+                  <h2>Movies I Love</h2>
+                  <p>
+                    Your collection of favorite movies that you&apos;ve marked with a crown.
+                  </p>
+                </div>
+              </div>
+
+              {/* Horizontal Scrolling Favorites Carousel */}
+              {!isAuthenticated || !currentUser ? (
+                <p style={{ textAlign: "center", color: "#ff8f8f", padding: "2rem" }}>
+                  Please sign in to view your favorites.
+                </p>
+              ) : favoritesLoading ? (
+                <p style={{ textAlign: "center", color: "#9ec9ff", padding: "2rem" }}>
+                  Loading your favorites...
+                </p>
+              ) : favoritesMovies.length === 0 ? (
+                <p style={{ textAlign: "center", color: "#ff8f8f", padding: "2rem" }}>
+                  Your favorites list is empty. Add movies to your favorites to see them here!
+                </p>
+              ) : (
+                <HorizontalMovieCarousel
+                  movies={favoritesMovies}
+                  onMovieClick={handleMovieClick}
+                  loading={favoritesLoading}
+                  movieRatings={movieRatings}
+                  favourites={favourites}
+                  watchlist={watchlist}
+                  onFavouriteClick={handleFavouriteClick}
+                  onWatchlistClick={handleWatchlistClick}
+                />
+              )}
+            </section>
+          ) : null}
         </main>
       </div>
+
+      {/* Floating Action Button */}
+      {isAuthenticated && (
+        <div className={`fab-container ${fabOpen ? "open" : ""}`}>
+          {/* Overlay when menu is open */}
+          {fabOpen && (
+            <div 
+              className="fab-overlay" 
+              onClick={() => setFabOpen(false)}
+              aria-label="Close menu"
+            />
+          )}
+
+          {/* Quick Actions Menu */}
+          <div className={`fab-menu ${fabOpen ? "open" : ""}`}>
+            {/* Home Action */}
+            <button
+              className="fab-action-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                setFabOpen(false);
+                handleHomeClick(e);
+              }}
+              title="Go to Home"
+              aria-label="Go to Home page"
+            >
+              <span className="fab-icon">🏠</span>
+              <span className="fab-label">Home</span>
+            </button>
+
+            {/* Ratings Action */}
+            <button
+              className="fab-action-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                setFabOpen(false);
+                handleRatingsClick(e);
+              }}
+              title="Go to Ratings"
+              aria-label="Go to Ratings page"
+            >
+              <span className="fab-icon">⭐</span>
+              <span className="fab-label">Ratings</span>
+            </button>
+
+            {/* Edit/Profile Action */}
+            {isAuthenticated && currentUser && (
+              <button
+                className="fab-action-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setFabOpen(false);
+                  handleProfileClick();
+                }}
+                title="Edit Profile"
+                aria-label="Edit Profile"
+              >
+                <span className="fab-icon">✏️</span>
+                <span className="fab-label">Edit</span>
+              </button>
+            )}
+
+            {/* Light/Dark Mode Toggle */}
+            <button
+              className="fab-action-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                setFabOpen(false);
+                const newTheme = theme === "dark" ? "light" : "dark";
+                setTheme(newTheme);
+              }}
+              title={`Switch to ${theme === "dark" ? "Light" : "Dark"} Mode`}
+              aria-label={`Switch to ${theme === "dark" ? "Light" : "Dark"} Mode`}
+            >
+              <span className="fab-icon">{theme === "dark" ? "☀️" : "🌙"}</span>
+              <span className="fab-label">{theme === "dark" ? "Light Mode" : "Dark Mode"}</span>
+            </button>
+          </div>
+
+          {/* Main FAB Button */}
+          <button
+            className={`fab-main-btn ${fabOpen ? "open" : ""}`}
+            onClick={() => setFabOpen(!fabOpen)}
+            aria-label={fabOpen ? "Close quick actions" : "Open quick actions"}
+            aria-expanded={fabOpen}
+          >
+            <span className="fab-main-icon">{fabOpen ? "✕" : "☰"}</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

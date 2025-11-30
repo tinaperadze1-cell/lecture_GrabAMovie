@@ -310,6 +310,29 @@
   filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.5));
 }
 
+/* Halloween theme - Better star visibility */
+[data-theme="halloween"] .star {
+  color: rgba(204, 102, 0, 0.2);
+}
+
+[data-theme="halloween"] .star.active {
+  color: #ffeb3b;
+  text-shadow: 0 0 8px rgba(255, 235, 59, 0.8), 0 0 12px rgba(255, 235, 59, 0.5);
+}
+
+[data-theme="halloween"] .star:hover {
+  color: #fff59d;
+}
+
+[data-theme="halloween"] .star-filled {
+  color: #ffeb3b;
+  text-shadow: 0 0 6px rgba(255, 235, 59, 0.7);
+}
+
+[data-theme="halloween"] .star-empty {
+  color: rgba(204, 102, 0, 0.15);
+}
+
 [data-theme="stranger"] {
   /* Stranger Things theme - Deep Reds, Black, Teal/Green accents */
   --bg-primary: #000000;
@@ -447,6 +470,259 @@ body,
   height: 100vh;
   overflow: hidden;
   background: var(--bg-gradient);
+  position: relative;
+  transition: background 1s ease;
+}
+
+/* Dynamic Mood-Based Backgrounds - Fixed Selectors */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 1s ease;
+  pointer-events: none;
+}
+
+/* Horror Theme - Dark Red Haze (VERY NOTICEABLE) */
+html[data-mood="mood-horror"] body::before,
+body[data-mood="mood-horror"]::before {
+  opacity: 0.9;
+  background: 
+    radial-gradient(circle at 20% 30%, rgba(139, 0, 0, 0.9) 0%, transparent 50%),
+    radial-gradient(circle at 80% 70%, rgba(100, 0, 0, 0.8) 0%, transparent 50%),
+    radial-gradient(circle at 50% 50%, rgba(150, 0, 0, 0.7) 0%, transparent 70%),
+    linear-gradient(135deg, rgba(80, 0, 0, 1) 0%, rgba(120, 0, 0, 0.8) 50%, rgba(80, 0, 0, 1) 100%);
+  box-shadow: inset 0 0 500px rgba(139, 0, 0, 0.7);
+  animation: horrorPulse 3s ease-in-out infinite;
+}
+
+@keyframes horrorPulse {
+  0%, 100% {
+    opacity: 0.9;
+    filter: brightness(1) contrast(1);
+  }
+  50% {
+    opacity: 1;
+    filter: brightness(1.15) contrast(1.1);
+  }
+}
+
+html[data-mood="mood-horror"] body,
+html[data-mood="mood-horror"] #root,
+body[data-mood="mood-horror"],
+body[data-mood="mood-horror"] #root {
+  background: 
+    radial-gradient(circle at 20% 30%, rgba(139, 0, 0, 0.6) 0%, transparent 45%),
+    radial-gradient(circle at 80% 70%, rgba(100, 0, 0, 0.5) 0%, transparent 45%),
+    linear-gradient(135deg, #0a0000 0%, #1a0000 50%, #0f0000 100%) !important;
+}
+
+/* Romance Theme - Soft Pink Glow (VERY NOTICEABLE) */
+html[data-mood="mood-romance"] body::before,
+body[data-mood="mood-romance"]::before {
+  opacity: 0.85;
+  background: 
+    radial-gradient(circle at 30% 40%, rgba(255, 182, 193, 0.8) 0%, transparent 60%),
+    radial-gradient(circle at 70% 60%, rgba(255, 192, 203, 0.7) 0%, transparent 60%),
+    radial-gradient(circle at 50% 50%, rgba(255, 200, 210, 0.6) 0%, transparent 70%),
+    linear-gradient(135deg, rgba(255, 182, 193, 0.5) 0%, rgba(255, 192, 203, 0.4) 50%, rgba(255, 182, 193, 0.5) 100%);
+  animation: romanceGlow 4s ease-in-out infinite;
+}
+
+@keyframes romanceGlow {
+  0%, 100% {
+    opacity: 0.85;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.95;
+    transform: scale(1.02);
+  }
+}
+
+html[data-mood="mood-romance"] body,
+html[data-mood="mood-romance"] #root,
+body[data-mood="mood-romance"],
+body[data-mood="mood-romance"] #root {
+  background: 
+    radial-gradient(circle at 30% 40%, rgba(255, 182, 193, 0.5) 0%, transparent 55%),
+    radial-gradient(circle at 70% 60%, rgba(255, 192, 203, 0.4) 0%, transparent 55%),
+    linear-gradient(135deg, #1a0a0f 0%, #2a0a1a 50%, #1a0a0f 100%) !important;
+}
+
+/* Sci-Fi Theme - Neon Blue Lines (VERY NOTICEABLE) */
+html[data-mood="mood-scifi"] body::before,
+body[data-mood="mood-scifi"]::before {
+  opacity: 0.8;
+  background: 
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 5px,
+      rgba(0, 200, 255, 0.25) 5px,
+      rgba(0, 200, 255, 0.25) 10px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 5px,
+      rgba(0, 255, 255, 0.2) 5px,
+      rgba(0, 255, 255, 0.2) 10px
+    ),
+    radial-gradient(circle at 50% 50%, rgba(0, 150, 255, 0.6) 0%, transparent 70%);
+  animation: scifiScan 6s linear infinite, scifiGlow 3s ease-in-out infinite;
+}
+
+@keyframes scifiScan {
+  0% {
+    background-position: 0 0, 0 0, 50% 50%;
+  }
+  100% {
+    background-position: 0 250px, 250px 0, 50% 50%;
+  }
+}
+
+@keyframes scifiGlow {
+  0%, 100% {
+    opacity: 0.8;
+    filter: brightness(1) hue-rotate(0deg);
+  }
+  50% {
+    opacity: 0.9;
+    filter: brightness(1.4) hue-rotate(10deg);
+  }
+}
+
+html[data-mood="mood-scifi"] body,
+html[data-mood="mood-scifi"] #root,
+body[data-mood="mood-scifi"],
+body[data-mood="mood-scifi"] #root {
+  background: 
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 5px,
+      rgba(0, 150, 255, 0.2) 5px,
+      rgba(0, 150, 255, 0.2) 10px
+    ),
+    radial-gradient(circle at 50% 50%, rgba(0, 150, 255, 0.4) 0%, transparent 65%),
+    linear-gradient(135deg, #000510 0%, #001020 50%, #000510 100%) !important;
+}
+
+/* Action Theme - Sharp Metal Gradients (VERY NOTICEABLE) */
+html[data-mood="mood-action"] body::before,
+body[data-mood="mood-action"]::before {
+  opacity: 0.75;
+  background: 
+    linear-gradient(45deg, rgba(220, 220, 220, 0.3) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(220, 220, 220, 0.3) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(220, 220, 220, 0.3) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(220, 220, 220, 0.3) 75%),
+    linear-gradient(135deg, rgba(180, 180, 180, 0.4) 0%, rgba(150, 150, 150, 0.35) 50%, rgba(180, 180, 180, 0.4) 100%);
+  background-size: 40px 40px, 40px 40px, 40px 40px, 40px 40px, 100% 100%;
+  background-position: 0 0, 0 20px, 20px -20px, -20px 0px, 0 0;
+  animation: actionShift 4s linear infinite;
+}
+
+@keyframes actionShift {
+  0% {
+    background-position: 0 0, 0 20px, 20px -20px, -20px 0px, 0 0;
+  }
+  100% {
+    background-position: 40px 40px, 40px 60px, 60px 20px, 20px 40px, 0 0;
+  }
+}
+
+html[data-mood="mood-action"] body,
+html[data-mood="mood-action"] #root,
+body[data-mood="mood-action"],
+body[data-mood="mood-action"] #root {
+  background: 
+    linear-gradient(45deg, rgba(150, 150, 150, 0.22) 25%, transparent 25%),
+    linear-gradient(135deg, rgba(120, 120, 120, 0.3) 0%, rgba(150, 150, 150, 0.25) 50%, rgba(120, 120, 120, 0.3) 100%) !important;
+  background-size: 40px 40px, 100% 100%;
+}
+
+/* Comedy Theme - Warm Yellow Glow (VERY NOTICEABLE) */
+html[data-mood="mood-comedy"] body::before,
+body[data-mood="mood-comedy"]::before {
+  opacity: 0.8;
+  background: 
+    radial-gradient(circle at 50% 50%, rgba(255, 215, 0, 0.7) 0%, transparent 70%),
+    radial-gradient(circle at 30% 50%, rgba(255, 200, 0, 0.6) 0%, transparent 70%),
+    radial-gradient(circle at 70% 50%, rgba(255, 180, 0, 0.5) 0%, transparent 70%),
+    linear-gradient(135deg, rgba(255, 200, 0, 0.4) 0%, rgba(255, 180, 0, 0.3) 100%);
+  animation: comedyBrightness 3s ease-in-out infinite;
+}
+
+@keyframes comedyBrightness {
+  0%, 100% {
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+html[data-mood="mood-comedy"] body,
+html[data-mood="mood-comedy"] #root,
+body[data-mood="mood-comedy"],
+body[data-mood="mood-comedy"] #root {
+  background: 
+    radial-gradient(circle at 50% 50%, rgba(255, 215, 0, 0.4) 0%, transparent 65%),
+    linear-gradient(135deg, #1a1500 0%, #2a2000 50%, #1a1500 100%) !important;
+}
+
+/* Drama Theme - Deep Purple Haze (VERY NOTICEABLE) */
+html[data-mood="mood-drama"] body::before,
+body[data-mood="mood-drama"]::before {
+  opacity: 0.85;
+  background: 
+    radial-gradient(circle at 40% 50%, rgba(138, 43, 226, 0.7) 0%, transparent 60%),
+    radial-gradient(circle at 60% 50%, rgba(75, 0, 130, 0.6) 0%, transparent 60%),
+    radial-gradient(circle at 50% 50%, rgba(147, 51, 234, 0.55) 0%, transparent 70%),
+    linear-gradient(135deg, rgba(138, 43, 226, 0.4) 0%, rgba(75, 0, 130, 0.3) 100%);
+  animation: dramaWave 5s ease-in-out infinite;
+}
+
+@keyframes dramaWave {
+  0%, 100% {
+    opacity: 0.85;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.95;
+    transform: scale(1.01);
+  }
+}
+
+html[data-mood="mood-drama"] body,
+html[data-mood="mood-drama"] #root,
+body[data-mood="mood-drama"],
+body[data-mood="mood-drama"] #root {
+  background: 
+    radial-gradient(circle at 40% 50%, rgba(138, 43, 226, 0.4) 0%, transparent 55%),
+    linear-gradient(135deg, #0a0510 0%, #150a20 50%, #0a0510 100%) !important;
+}
+
+/* Default Theme - Subtle Blue Glow */
+html[data-mood="mood-default"] body::before,
+body[data-mood="mood-default"]::before {
+  opacity: 0.5;
+  background: 
+    radial-gradient(circle at 50% 50%, rgba(100, 150, 255, 0.35) 0%, transparent 75%);
+}
+
+html[data-mood="mood-default"] body,
+html[data-mood="mood-default"] #root,
+body[data-mood="mood-default"],
+body[data-mood="mood-default"] #root {
+  background: var(--bg-gradient) !important;
 }
 
 a {
@@ -579,6 +855,553 @@ a {
   align-items: center;
   justify-content: center;
   padding: 1rem;
+  transition: background 1s ease;
+}
+
+/* ============================================
+   MOOD-BASED BACKGROUNDS - CINEMATIC COLOR SCHEMES
+   Visible overlays that work with all themes
+   ============================================ */
+
+/* Base overlay setup - applies to body and page */
+body::after,
+.page::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 0;
+  opacity: 0;
+  transition: opacity 1.2s ease;
+  pointer-events: none;
+  mix-blend-mode: overlay;
+}
+
+.page::before {
+  z-index: 0;
+}
+
+body::after {
+  z-index: -1;
+}
+
+/* CRIME - Dark Red, Gloomy, Desaturated (Similar to Horror) */
+html[data-mood="mood-crime"] body::after,
+html[data-mood="mood-crime"] .page::before,
+body[data-mood="mood-crime"]::after {
+  opacity: 0.9;
+  background: 
+    radial-gradient(circle at 25% 30%, rgba(100, 0, 0, 0.95) 0%, transparent 45%),
+    radial-gradient(circle at 75% 70%, rgba(60, 20, 20, 0.9) 0%, transparent 45%),
+    radial-gradient(circle at 50% 50%, rgba(80, 0, 0, 0.85) 0%, transparent 65%),
+    linear-gradient(135deg, rgba(40, 30, 30, 1) 0%, rgba(60, 40, 40, 0.95) 50%, rgba(40, 30, 30, 1) 100%),
+    linear-gradient(to bottom, rgba(20, 10, 10, 1) 0%, rgba(30, 20, 20, 1) 100%);
+  box-shadow: inset 0 0 800px rgba(100, 0, 0, 0.7);
+  filter: contrast(1.1) brightness(0.7);
+  animation: crimePulse 4s ease-in-out infinite;
+}
+
+@keyframes crimePulse {
+  0%, 100% {
+    opacity: 0.9;
+    filter: contrast(1.1) brightness(0.7);
+  }
+  50% {
+    opacity: 0.95;
+    filter: contrast(1.15) brightness(0.65);
+  }
+}
+
+html[data-mood="mood-crime"] body,
+html[data-mood="mood-crime"] #root,
+body[data-mood="mood-crime"] {
+  background: 
+    radial-gradient(circle at 25% 30%, rgba(100, 0, 0, 0.8) 0%, transparent 40%),
+    linear-gradient(135deg, #1a0a0a 0%, #2a1515 50%, #1a0a0a 100%) !important;
+  filter: contrast(1.05);
+}
+
+/* HORROR - Dark Red, Black, Gray (Fear & Suspense) */
+html[data-mood="mood-horror"] body::after,
+html[data-mood="mood-horror"] .page::before,
+body[data-mood="mood-horror"]::after {
+  opacity: 0.95;
+  background: 
+    radial-gradient(circle at 20% 30%, rgba(139, 0, 0, 1) 0%, transparent 50%),
+    radial-gradient(circle at 80% 70%, rgba(100, 0, 0, 0.95) 0%, transparent 50%),
+    radial-gradient(circle at 50% 50%, rgba(120, 0, 0, 0.9) 0%, transparent 70%),
+    linear-gradient(135deg, rgba(30, 0, 0, 1) 0%, rgba(50, 0, 0, 1) 50%, rgba(30, 0, 0, 1) 100%),
+    linear-gradient(to bottom, rgba(0, 0, 0, 1) 0%, rgba(20, 0, 0, 1) 100%);
+  box-shadow: inset 0 0 900px rgba(139, 0, 0, 0.8);
+  filter: contrast(1.2) brightness(0.6);
+  animation: horrorPulse 3s ease-in-out infinite;
+}
+
+@keyframes horrorPulse {
+  0%, 100% {
+    opacity: 0.95;
+    filter: contrast(1.2) brightness(0.6);
+  }
+  50% {
+    opacity: 1;
+    filter: contrast(1.3) brightness(0.55);
+  }
+}
+
+html[data-mood="mood-horror"] body,
+html[data-mood="mood-horror"] #root,
+body[data-mood="mood-horror"] {
+  background: 
+    radial-gradient(circle at 20% 30%, rgba(139, 0, 0, 0.8) 0%, transparent 45%),
+    linear-gradient(135deg, #0a0000 0%, #1a0000 50%, #0f0000 100%) !important;
+  filter: contrast(1.1);
+}
+
+/* ROMANCE - Soft Pink, Warm (Love & Warmth) */
+html[data-mood="mood-romance"] body::after,
+html[data-mood="mood-romance"] .page::before,
+body[data-mood="mood-romance"]::after {
+  opacity: 0.85;
+  background: 
+    radial-gradient(circle at 30% 40%, rgba(255, 182, 193, 0.95) 0%, transparent 60%),
+    radial-gradient(circle at 70% 60%, rgba(255, 192, 203, 0.9) 0%, transparent 60%),
+    radial-gradient(circle at 50% 50%, rgba(255, 200, 210, 0.85) 0%, transparent 70%),
+    linear-gradient(135deg, rgba(255, 182, 193, 0.7) 0%, rgba(255, 192, 203, 0.6) 50%, rgba(255, 182, 193, 0.7) 100%);
+  mix-blend-mode: screen;
+  animation: romanceGlow 4s ease-in-out infinite;
+}
+
+@keyframes romanceGlow {
+  0%, 100% {
+    opacity: 0.85;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.92;
+    transform: scale(1.02);
+  }
+}
+
+html[data-mood="mood-romance"] body,
+html[data-mood="mood-romance"] #root,
+body[data-mood="mood-romance"] {
+  background: 
+    radial-gradient(circle at 30% 40%, rgba(255, 182, 193, 0.6) 0%, transparent 55%),
+    linear-gradient(135deg, #1a0a0f 0%, #2a0a1a 50%, #1a0a0f 100%) !important;
+}
+
+/* SCI-FI - Neon Blue, Cyan (Futurism & Technology) */
+html[data-mood="mood-scifi"] body::after,
+html[data-mood="mood-scifi"] .page::before,
+body[data-mood="mood-scifi"]::after {
+  opacity: 0.8;
+  background: 
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 8px,
+      rgba(0, 255, 255, 0.4) 8px,
+      rgba(0, 255, 255, 0.4) 16px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 8px,
+      rgba(0, 200, 255, 0.35) 8px,
+      rgba(0, 200, 255, 0.35) 16px
+    ),
+    radial-gradient(circle at 50% 50%, rgba(0, 150, 255, 0.8) 0%, transparent 75%);
+  mix-blend-mode: screen;
+  animation: scifiScan 6s linear infinite, scifiGlow 3s ease-in-out infinite;
+}
+
+@keyframes scifiScan {
+  0% {
+    background-position: 0 0, 0 0, 50% 50%;
+  }
+  100% {
+    background-position: 0 300px, 300px 0, 50% 50%;
+  }
+}
+
+@keyframes scifiGlow {
+  0%, 100% {
+    opacity: 0.8;
+    filter: brightness(1) hue-rotate(0deg);
+  }
+  50% {
+    opacity: 0.9;
+    filter: brightness(1.5) hue-rotate(10deg);
+  }
+}
+
+html[data-mood="mood-scifi"] body,
+html[data-mood="mood-scifi"] #root,
+body[data-mood="mood-scifi"] {
+  background: 
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 8px,
+      rgba(0, 150, 255, 0.3) 8px,
+      rgba(0, 150, 255, 0.3) 16px
+    ),
+    radial-gradient(circle at 50% 50%, rgba(0, 150, 255, 0.5) 0%, transparent 70%),
+    linear-gradient(135deg, #000510 0%, #001020 50%, #000510 100%) !important;
+}
+
+/* ACTION - Metallic, Sharp Gradients (Energy & Intensity) */
+html[data-mood="mood-action"] body::after,
+html[data-mood="mood-action"] .page::before,
+body[data-mood="mood-action"]::after {
+  opacity: 0.75;
+  background: 
+    linear-gradient(45deg, rgba(255, 255, 255, 0.4) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(255, 255, 255, 0.4) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.4) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.4) 75%),
+    linear-gradient(135deg, rgba(200, 200, 200, 0.5) 0%, rgba(150, 150, 150, 0.45) 50%, rgba(200, 200, 200, 0.5) 100%);
+  background-size: 40px 40px, 40px 40px, 40px 40px, 40px 40px, 100% 100%;
+  background-position: 0 0, 0 20px, 20px -20px, -20px 0px, 0 0;
+  mix-blend-mode: overlay;
+  animation: actionShift 4s linear infinite;
+}
+
+@keyframes actionShift {
+  0% {
+    background-position: 0 0, 0 20px, 20px -20px, -20px 0px, 0 0;
+  }
+  100% {
+    background-position: 40px 40px, 40px 60px, 60px 20px, 20px 40px, 0 0;
+  }
+}
+
+html[data-mood="mood-action"] body,
+html[data-mood="mood-action"] #root,
+body[data-mood="mood-action"] {
+  background: 
+    linear-gradient(45deg, rgba(150, 150, 150, 0.3) 25%, transparent 25%),
+    linear-gradient(135deg, rgba(120, 120, 120, 0.4) 0%, rgba(150, 150, 150, 0.35) 50%, rgba(120, 120, 120, 0.4) 100%) !important;
+  background-size: 40px 40px, 100% 100%;
+}
+
+/* COMEDY - Warm Yellow, Bright (Joy & Lightness) */
+html[data-mood="mood-comedy"] body::after,
+html[data-mood="mood-comedy"] .page::before,
+body[data-mood="mood-comedy"]::after {
+  opacity: 0.8;
+  background: 
+    radial-gradient(circle at 50% 50%, rgba(255, 215, 0, 0.9) 0%, transparent 75%),
+    radial-gradient(circle at 30% 50%, rgba(255, 200, 0, 0.85) 0%, transparent 75%),
+    radial-gradient(circle at 70% 50%, rgba(255, 180, 0, 0.8) 0%, transparent 75%),
+    linear-gradient(135deg, rgba(255, 200, 0, 0.6) 0%, rgba(255, 180, 0, 0.5) 100%);
+  mix-blend-mode: screen;
+  animation: comedyBrightness 3s ease-in-out infinite;
+}
+
+@keyframes comedyBrightness {
+  0%, 100% {
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 0.88;
+  }
+}
+
+html[data-mood="mood-comedy"] body,
+html[data-mood="mood-comedy"] #root,
+body[data-mood="mood-comedy"] {
+  background: 
+    radial-gradient(circle at 50% 50%, rgba(255, 215, 0, 0.5) 0%, transparent 70%),
+    linear-gradient(135deg, #1a1500 0%, #2a2000 50%, #1a1500 100%) !important;
+}
+
+/* DRAMA - Deep Purple, Moody (Emotion & Depth) */
+html[data-mood="mood-drama"] body::after,
+html[data-mood="mood-drama"] .page::before,
+body[data-mood="mood-drama"]::after {
+  opacity: 0.9;
+  background: 
+    radial-gradient(circle at 40% 50%, rgba(138, 43, 226, 0.9) 0%, transparent 65%),
+    radial-gradient(circle at 60% 50%, rgba(75, 0, 130, 0.85) 0%, transparent 65%),
+    radial-gradient(circle at 50% 50%, rgba(147, 51, 234, 0.8) 0%, transparent 75%),
+    linear-gradient(135deg, rgba(138, 43, 226, 0.6) 0%, rgba(75, 0, 130, 0.5) 100%);
+  mix-blend-mode: multiply;
+  animation: dramaWave 5s ease-in-out infinite;
+}
+
+@keyframes dramaWave {
+  0%, 100% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.95;
+    transform: scale(1.01);
+  }
+}
+
+html[data-mood="mood-drama"] body,
+html[data-mood="mood-drama"] #root,
+body[data-mood="mood-drama"] {
+  background: 
+    radial-gradient(circle at 40% 50%, rgba(138, 43, 226, 0.5) 0%, transparent 60%),
+    linear-gradient(135deg, #0a0510 0%, #150a20 50%, #0a0510 100%) !important;
+}
+
+/* DEFAULT - Subtle Blue Glow */
+html[data-mood="mood-default"] body::after,
+html[data-mood="mood-default"] .page::before,
+body[data-mood="mood-default"]::after {
+  opacity: 0.4;
+  background: 
+    radial-gradient(circle at 50% 50%, rgba(100, 150, 255, 0.4) 0%, transparent 80%);
+}
+
+html[data-mood="mood-default"] body,
+html[data-mood="mood-default"] #root,
+body[data-mood="mood-default"] {
+  background: var(--bg-gradient) !important;
+}
+
+/* ============================================
+   FLOATING ACTION BUTTON (FAB)
+   Quick Actions Menu
+   ============================================ */
+
+.fab-container {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1rem;
+}
+
+/* Overlay when menu is open - Subtle, non-blurring */
+.fab-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.2);
+  z-index: 999;
+  animation: fabOverlayFadeIn 0.3s ease;
+  /* Removed backdrop-filter to prevent blurring content */
+}
+
+@keyframes fabOverlayFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Main FAB Button */
+.fab-main-btn {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 2px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 1.5rem;
+  cursor: pointer;
+  box-shadow: 
+    0 8px 24px rgba(0, 0, 0, 0.4),
+    0 4px 8px rgba(0, 0, 0, 0.2);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  z-index: 1001;
+}
+
+.fab-main-btn:hover {
+  transform: scale(1.1);
+  box-shadow: 
+    0 12px 32px rgba(0, 0, 0, 0.5),
+    0 6px 12px rgba(0, 0, 0, 0.3),
+    0 0 20px var(--text-accent);
+  border-color: var(--text-accent);
+  background: var(--bg-secondary);
+}
+
+.fab-main-btn:active {
+  transform: scale(0.95);
+}
+
+.fab-main-btn.open {
+  transform: rotate(45deg);
+  background: var(--text-accent);
+  color: var(--bg-primary);
+}
+
+.fab-main-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.3s ease;
+}
+
+/* Quick Actions Menu */
+.fab-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(20px) scale(0.9);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+}
+
+.fab-menu.open {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0) scale(1);
+  pointer-events: all;
+  z-index: 1002;
+}
+
+/* Individual Action Buttons */
+.fab-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1.25rem;
+  border-radius: 50px;
+  border: 2px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 
+    0 6px 20px rgba(0, 0, 0, 0.3),
+    0 2px 6px rgba(0, 0, 0, 0.2);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+  z-index: 1003;
+  pointer-events: all;
+}
+
+.fab-action-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+  transition: left 0.5s ease;
+}
+
+.fab-action-btn:hover::before {
+  left: 100%;
+}
+
+.fab-action-btn:hover {
+  transform: translateX(-8px) scale(1.05);
+  box-shadow: 
+    0 8px 24px rgba(0, 0, 0, 0.4),
+    0 4px 8px rgba(0, 0, 0, 0.3),
+    0 0 16px var(--text-accent);
+  border-color: var(--text-accent);
+  background: var(--bg-secondary);
+  color: var(--text-accent);
+}
+
+.fab-action-btn:active {
+  transform: translateX(-8px) scale(0.98);
+}
+
+.fab-icon {
+  font-size: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  transition: transform 0.3s ease;
+}
+
+.fab-action-btn:hover .fab-icon {
+  transform: scale(1.2) rotate(5deg);
+}
+
+.fab-label {
+  font-weight: 500;
+  letter-spacing: 0.5px;
+}
+
+/* Staggered animation for menu items */
+.fab-menu.open .fab-action-btn:nth-child(1) {
+  animation: fabItemSlideIn 0.3s ease 0.1s both;
+}
+
+.fab-menu.open .fab-action-btn:nth-child(2) {
+  animation: fabItemSlideIn 0.3s ease 0.15s both;
+}
+
+.fab-menu.open .fab-action-btn:nth-child(3) {
+  animation: fabItemSlideIn 0.3s ease 0.2s both;
+}
+
+.fab-menu.open .fab-action-btn:nth-child(4) {
+  animation: fabItemSlideIn 0.3s ease 0.25s both;
+}
+
+@keyframes fabItemSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .fab-container {
+    bottom: 1.5rem;
+    right: 1.5rem;
+  }
+
+  .fab-main-btn {
+    width: 56px;
+    height: 56px;
+    font-size: 1.3rem;
+  }
+
+  .fab-action-btn {
+    padding: 0.6rem 1rem;
+    font-size: 0.85rem;
+  }
+
+  .fab-icon {
+    font-size: 1.3rem;
+  }
+}
+
+/* Hide FAB on mobile when scrolling down (optional enhancement) */
+@media (max-width: 480px) {
+  .fab-container {
+    bottom: 1rem;
+    right: 1rem;
+  }
 }
 
 .desktop-frame {
@@ -1152,6 +1975,178 @@ main {
   gap: 1.5rem;
 }
 
+/* ============================================
+   HORIZONTAL SCROLLING CAROUSEL
+   Netflix-style horizontal scrolling sections
+   ============================================ */
+
+.horizontal-carousel-wrapper {
+  position: relative;
+  width: 100%;
+  overflow: visible;
+}
+
+.horizontal-carousel {
+  display: flex;
+  gap: 1.5rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-color) transparent;
+  padding: 0.5rem 0;
+  margin: 0 -3rem;
+  padding-left: 3rem;
+  padding-right: 3rem;
+  /* Smooth momentum scrolling */
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;
+}
+
+.horizontal-carousel::-webkit-scrollbar {
+  height: 8px;
+}
+
+.horizontal-carousel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.horizontal-carousel::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+
+.horizontal-carousel::-webkit-scrollbar-thumb:hover {
+  background: var(--text-accent);
+}
+
+.carousel-card {
+  flex: 0 0 200px;
+  min-width: 200px;
+  max-width: 200px;
+  scroll-snap-align: start;
+}
+
+/* Regular movie cards in horizontal carousel */
+.carousel-card-movie {
+  flex: 0 0 280px;
+  min-width: 280px;
+  max-width: 280px;
+  scroll-snap-align: start;
+}
+
+/* Adjust horizontal carousel for regular movie cards */
+.horizontal-carousel-movies {
+  gap: 1.5rem;
+}
+
+.horizontal-carousel-movies .movie-card {
+  width: 280px;
+  margin: 0;
+  height: auto;
+}
+
+/* Ensure rating-area section has proper padding for horizontal carousel */
+.rating-area {
+  padding: 3rem;
+}
+
+.rating-area .horizontal-carousel-wrapper {
+  margin-top: 2rem;
+}
+
+.rating-area .horizontal-carousel {
+  margin: 0 -3rem;
+  padding-left: 3rem;
+  padding-right: 3rem;
+}
+
+/* Navigation Arrows */
+.carousel-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 2px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 2rem;
+  font-weight: 300;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  pointer-events: all;
+  box-shadow: 
+    0 4px 12px rgba(0, 0, 0, 0.3),
+    0 2px 6px rgba(0, 0, 0, 0.2);
+  transition: all 0.3s ease;
+  opacity: 0.9;
+}
+
+.carousel-arrow:hover {
+  opacity: 1;
+  transform: translateY(-50%) scale(1.1);
+  background: var(--bg-secondary);
+  border-color: var(--text-accent);
+  box-shadow: 
+    0 6px 16px rgba(0, 0, 0, 0.4),
+    0 0 20px var(--text-accent);
+  color: var(--text-accent);
+}
+
+.carousel-arrow:active {
+  transform: translateY(-50%) scale(0.95);
+}
+
+.carousel-arrow-left {
+  left: -24px;
+}
+
+.carousel-arrow-right {
+  right: -24px;
+}
+
+/* Ensure arrows are always clickable */
+.carousel-arrow-left,
+.carousel-arrow-right {
+  pointer-events: auto !important;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .horizontal-carousel {
+    margin: 0 -1.5rem;
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+  }
+
+  .carousel-arrow {
+    width: 40px;
+    height: 40px;
+    font-size: 1.5rem;
+  }
+
+  .carousel-arrow-left {
+    left: -20px;
+  }
+
+  .carousel-arrow-right {
+    right: -20px;
+  }
+
+  .carousel-card {
+    flex: 0 0 160px;
+    min-width: 160px;
+    max-width: 160px;
+  }
+}
+
 .top-rated-card {
   background: var(--bg-card);
   border: 1px solid var(--border-light);
@@ -1161,6 +2156,7 @@ main {
   transition: all 0.3s ease;
   display: flex;
   flex-direction: column;
+  position: relative;
 }
 
 .top-rated-card:hover {
@@ -1174,17 +2170,117 @@ main {
   height: 300px;
   object-fit: cover;
   background: var(--bg-tertiary);
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  display: block;
+}
+
+.top-rated-card:hover .top-rated-poster {
+  transform: scale(1.05);
+  filter: brightness(1.1) contrast(1.05);
+  box-shadow: 
+    0 0 20px rgba(255, 255, 255, 0.2),
+    0 0 40px var(--text-accent),
+    inset 0 0 30px rgba(255, 255, 255, 0.1);
+  animation: posterGlow 2s ease-in-out infinite;
+}
+
+@keyframes posterGlow {
+  0%, 100% {
+    box-shadow: 
+      0 0 20px rgba(255, 255, 255, 0.2),
+      0 0 40px var(--text-accent),
+      inset 0 0 30px rgba(255, 255, 255, 0.1);
+  }
+  50% {
+    box-shadow: 
+      0 0 30px rgba(255, 255, 255, 0.3),
+      0 0 60px var(--text-accent),
+      inset 0 0 40px rgba(255, 255, 255, 0.15);
+  }
+}
+
+/* Animated light sweep effect on hover */
+.top-rated-card:hover .top-rated-poster::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.3),
+    transparent
+  );
+  z-index: 1;
+  animation: lightSweep 2s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes lightSweep {
+  0% {
+    left: -100%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
+/* Inner glow overlay */
+.top-rated-card:hover .top-rated-poster::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(
+    circle at center,
+    transparent 0%,
+    rgba(255, 255, 255, 0.05) 50%,
+    transparent 100%
+  );
+  opacity: 0;
+  animation: innerGlow 2s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 1;
+}
+
+@keyframes innerGlow {
+  0%, 100% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 .top-rated-poster-placeholder {
   width: 100%;
   height: 300px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   background: var(--bg-tertiary);
-  font-size: 4rem;
+  font-size: 3rem;
   color: var(--text-tertiary);
+  gap: 0.5rem;
+  padding: 0.5rem;
+}
+
+.top-rated-poster-placeholder .placeholder-title {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .top-rated-info {
@@ -1220,6 +2316,24 @@ main {
 
 .top-rated-genre {
   color: var(--text-tertiary);
+  transition: all 0.3s ease;
+  cursor: default;
+  display: inline-block;
+}
+
+.top-rated-card:hover .top-rated-genre {
+  color: var(--text-accent);
+  text-shadow: 0 0 8px var(--text-accent);
+  animation: genreTextGlow 1.5s ease-in-out infinite;
+}
+
+@keyframes genreTextGlow {
+  0%, 100% {
+    text-shadow: 0 0 8px var(--text-accent);
+  }
+  50% {
+    text-shadow: 0 0 12px var(--text-accent), 0 0 16px var(--text-accent);
+  }
 }
 
 .top-rated-rating {
@@ -1261,11 +2375,124 @@ main {
   flex-direction: column;
   justify-content: space-between;
   gap: 1.25rem;
-  padding: 1.5rem;
+  padding: 0;
   border-radius: 18px;
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  transition: all 0.3s ease;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.movie-card-poster-container {
+  width: 100%;
+  height: 400px;
+  overflow: hidden;
+  position: relative;
+}
+
+.movie-card-poster {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+}
+
+.movie-card:hover .movie-card-poster {
+  transform: scale(1.05);
+  filter: brightness(1.1) contrast(1.05);
+  box-shadow: 
+    0 0 20px rgba(255, 255, 255, 0.2),
+    0 0 40px var(--text-accent),
+    inset 0 0 30px rgba(255, 255, 255, 0.1);
+  animation: posterGlow 2s ease-in-out infinite;
+}
+
+/* Animated light sweep effect on hover */
+.movie-card:hover .movie-card-poster::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.3),
+    transparent
+  );
+  z-index: 1;
+  animation: lightSweep 2s linear infinite;
+  pointer-events: none;
+}
+
+.movie-card-poster-placeholder {
+  width: 100%;
+  height: 400px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tertiary);
+  font-size: 4rem;
+  color: var(--text-tertiary);
+  gap: 0.5rem;
+  padding: 1rem;
+}
+
+.movie-card-poster-placeholder .placeholder-title {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.movie-card .movie-info {
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.movie-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 10px 30px var(--shadow);
+  border-color: var(--text-accent);
+}
+
+.movie-card:hover .tag {
+  color: var(--text-accent);
+  border-color: var(--text-accent);
+  box-shadow: 
+    0 0 10px var(--text-accent),
+    0 0 20px var(--text-accent),
+    inset 0 0 10px var(--text-accent);
+  transform: scale(1.05);
+  animation: genreGlow 1.5s ease-in-out infinite;
+}
+
+.movie-card:hover .tag::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: calc(100% + 10px);
+  height: calc(100% + 10px);
+  border-radius: 999px;
+  background: var(--text-accent);
+  opacity: 0.15;
+  animation: genrePulse 1.5s ease-in-out infinite;
+  z-index: -1;
+  pointer-events: none;
 }
 
 .movie-info {
@@ -1364,6 +2591,71 @@ main {
   border: 1px solid var(--border-color);
   align-self: flex-start;
   color: var(--text-secondary);
+  transition: all 0.3s ease;
+  position: relative;
+  cursor: pointer;
+  overflow: visible;
+  z-index: 1;
+}
+
+.tag:hover {
+  color: var(--text-accent);
+  border-color: var(--text-accent);
+  box-shadow: 
+    0 0 10px var(--text-accent),
+    0 0 20px var(--text-accent),
+    inset 0 0 10px var(--text-accent);
+  transform: scale(1.05);
+  animation: genreGlow 1.5s ease-in-out infinite;
+}
+
+@keyframes genreGlow {
+  0%, 100% {
+    box-shadow: 
+      0 0 10px var(--text-accent),
+      0 0 20px var(--text-accent),
+      inset 0 0 10px var(--text-accent);
+    filter: brightness(1);
+  }
+  50% {
+    box-shadow: 
+      0 0 15px var(--text-accent),
+      0 0 30px var(--text-accent),
+      inset 0 0 15px var(--text-accent);
+    filter: brightness(1.2);
+  }
+}
+
+/* Pulse effect with background glow */
+.tag:hover::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: calc(100% + 10px);
+  height: calc(100% + 10px);
+  border-radius: 999px;
+  background: var(--text-accent);
+  opacity: 0.15;
+  animation: genrePulse 1.5s ease-in-out infinite;
+  z-index: -1;
+  pointer-events: none;
+}
+
+@keyframes genrePulse {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.15;
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.3);
+    opacity: 0.05;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.15;
+  }
 }
 
 .star-row {
@@ -1813,6 +3105,7 @@ main {
 
 /* Movie Detail Page */
 .back-btn {
+  animation: buttonFadeIn 0.6s ease-out 0.3s both;
   margin-bottom: 2rem;
   padding: 0.75rem 1.5rem;
   border-radius: 8px;
@@ -1838,12 +3131,104 @@ main {
   border: 1px solid var(--border-color);
   background: var(--bg-tertiary);
   box-shadow: 0 20px 70px var(--shadow);
+  animation: movieDetailFadeIn 0.8s ease-out;
+  position: relative;
+}
+
+@keyframes movieDetailFadeIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.96) translateY(30px);
+    filter: blur(4px);
+  }
+  50% {
+    opacity: 0.6;
+    filter: blur(2px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: blur(0);
+  }
+}
+
+/* Theater curtain opening effect - simplified */
+.movie-detail-area::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: -50%;
+  width: 50%;
+  height: 100vh;
+  background: linear-gradient(to right, rgba(0, 0, 0, 0.95), rgba(0, 0, 0, 0.7));
+  z-index: 1;
+  animation: curtainLeft 0.8s ease-out forwards;
+  pointer-events: none;
+}
+
+.movie-detail-area::after {
+  content: '';
+  position: fixed;
+  top: 0;
+  right: -50%;
+  width: 50%;
+  height: 100vh;
+  background: linear-gradient(to left, rgba(0, 0, 0, 0.95), rgba(0, 0, 0, 0.7));
+  z-index: 1;
+  animation: curtainRight 0.8s ease-out forwards;
+  pointer-events: none;
+}
+
+@keyframes curtainLeft {
+  0% {
+    left: 0;
+  }
+  100% {
+    left: -50%;
+  }
+}
+
+@keyframes curtainRight {
+  0% {
+    right: 0;
+  }
+  100% {
+    right: -50%;
+  }
+}
+
+.movie-detail-area > * {
+  position: relative;
+  z-index: 2;
 }
 
 .movie-detail {
   display: flex;
   flex-direction: column;
   gap: 2.5rem;
+  animation: contentFadeIn 1s ease-out 0.2s both;
+}
+
+@keyframes contentFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes buttonFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 .movie-detail-header {
@@ -1859,6 +3244,50 @@ main {
   border-radius: 16px;
   box-shadow: 0 15px 40px var(--shadow);
   object-fit: cover;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+}
+
+.movie-poster:hover {
+  transform: scale(1.02);
+  box-shadow: 
+    0 20px 60px var(--shadow),
+    0 0 30px rgba(255, 255, 255, 0.1);
+  filter: brightness(1.05) contrast(1.05);
+}
+
+.movie-poster::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 16px;
+  background: radial-gradient(
+    circle at center,
+    transparent 40%,
+    rgba(255, 255, 255, 0.03) 50%,
+    transparent 60%
+  );
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.movie-poster:hover::before {
+  opacity: 1;
+  animation: posterShimmer 2s ease-in-out infinite;
+}
+
+@keyframes posterShimmer {
+  0%, 100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.6;
+  }
 }
 
 .movie-poster-placeholder {
@@ -1905,6 +3334,19 @@ main {
   gap: 0.75rem;
   font-size: 1rem;
   color: var(--text-tertiary);
+}
+
+.movie-genre {
+  transition: all 0.3s ease;
+  cursor: default;
+  display: inline-block;
+  position: relative;
+}
+
+.movie-genre:hover {
+  color: var(--text-accent);
+  text-shadow: 0 0 8px var(--text-accent);
+  animation: genreTextGlow 1.5s ease-in-out infinite;
 }
 
 .movie-separator {
@@ -2024,6 +3466,105 @@ main {
   color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.2rem;
+}
+
+/* Actors Section */
+.movie-actors-section {
+  padding: 1.5rem;
+  border-radius: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+}
+
+.movie-actors-section h3 {
+  margin: 0 0 1.5rem;
+  font-size: 1.2rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.2rem;
+}
+
+.actors-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 1.5rem;
+}
+
+.actor-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-light);
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.actor-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px var(--shadow);
+  border-color: var(--text-secondary);
+}
+
+.actor-photo {
+  width: 100px;
+  height: 150px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 2px solid var(--border-color);
+  transition: all 0.3s ease;
+}
+
+.actor-card:hover .actor-photo {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.actor-photo-placeholder {
+  width: 100px;
+  height: 150px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-card);
+  border-radius: 8px;
+  border: 2px solid var(--border-color);
+  font-size: 3rem;
+  color: var(--text-tertiary);
+}
+
+.actor-info {
+  text-align: center;
+  width: 100%;
+}
+
+.actor-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  margin-bottom: 0.25rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.actor-character {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.actors-loading {
+  text-align: center;
+  padding: 2rem;
+  color: var(--text-tertiary);
+  font-style: italic;
 }
 
 @media (max-width: 1024px) {
