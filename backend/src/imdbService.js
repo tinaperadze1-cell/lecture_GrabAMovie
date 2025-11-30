@@ -1,4 +1,5 @@
-require("dotenv").config();
+const path = require("path");
+require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
 const axios = require("axios");
 const { query } = require("./db");
 
@@ -7,7 +8,7 @@ const { query } = require("./db");
  * Free tier: 1,000 requests per day
  */
 
-const OMDB_API_KEY = process.env.OMDB_API_KEY || null; // Get free key from http://www.omdbapi.com/apikey.aspx
+const OMDB_API_KEY = process.env.OMDB_API_KEY || "ca478e54"; // Default API key, can be overridden by .env file
 const OMDB_API_URL = "http://www.omdbapi.com/";
 
 // Check if API key is configured
@@ -15,6 +16,8 @@ if (!OMDB_API_KEY || OMDB_API_KEY === "demo") {
   console.warn("⚠️  OMDB_API_KEY not set. IMDB rating updates will be disabled.");
   console.warn("   Get a free API key from: http://www.omdbapi.com/apikey.aspx");
   console.warn("   Add it to your .env file: OMDB_API_KEY=your_key_here");
+} else {
+  console.log("✅ OMDB API key configured. IMDB rating service is active.");
 }
 
 // Rate limiting: track requests per day

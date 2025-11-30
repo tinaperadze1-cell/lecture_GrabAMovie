@@ -3,6 +3,8 @@ const express = require("express");
 const cors = require("cors");
 const { query } = require("./db");
 const { updateMovieRating, updateAllMovieRatings, getDailyRequestCount } = require("./imdbService");
+const { updateMoviePoster, updateAllMoviePosters } = require("./posterService");
+const { fetchMovieActors } = require("./actorService");
 const { startScheduler } = require("./scheduler");
 
 const app = express();
@@ -869,7 +871,7 @@ app.put("/api/users/:userId", async (req, res) => {
 
     // Update theme preference if provided
     if (themePreference !== undefined) {
-      const validThemes = ['dark', 'light', 'red', 'blue', 'christmas', 'halloween', 'stranger', 'custom'];
+      const validThemes = ['normal', 'dark', 'light', 'red', 'blue', 'christmas', 'halloween', 'stranger', 'custom'];
       if (!validThemes.includes(themePreference)) {
         return res.status(400).json({ error: "Invalid theme preference." });
       }
@@ -1014,12 +1016,102 @@ app.get("/api/imdb/stats", async (req, res) => {
   }
 });
 
+// POST /api/movies/:id/update-poster - Manually update poster URL for a movie
+app.post("/api/movies/:id/update-poster", async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Get movie details
+    const movieResult = await query(
+      "SELECT id, title, year FROM movies WHERE id = $1",
+      [id]
+    );
+
+    if (movieResult.rows.length === 0) {
+      return res.status(404).json({ error: "Movie not found" });
+    }
+
+    const movie = movieResult.rows[0];
+    
+    // Update poster
+    const result = await updateMoviePoster(movie.id, movie.title, movie.year);
+
+    if (result.success) {
+      res.json({
+        success: true,
+        posterUrl: result.posterUrl,
+        message: `Poster updated successfully`,
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        error: result.error || "Failed to update poster",
+      });
+    }
+  } catch (error) {
+    console.error("Error updating movie poster:", error);
+    res.status(500).json({ error: "Failed to update movie poster" });
+  }
+});
+
+// POST /api/movies/update-all-posters - Update poster URLs for all movies missing posters (admin endpoint)
+app.post("/api/movies/update-all-posters", async (req, res) => {
+  try {
+    res.json({
+      message: "Poster update started. Check server logs for progress.",
+      status: "processing",
+    });
+
+    // Run update in background (don't await)
+    updateAllMoviePosters(5, 2000)
+      .then((result) => {
+        console.log("✅ Background poster update completed:", result);
+      })
+      .catch((error) => {
+        console.error("❌ Background poster update failed:", error);
+      });
+  } catch (error) {
+    console.error("Error starting poster update:", error);
+    res.status(500).json({ error: "Failed to start poster update" });
+  }
+});
+
+// GET /api/movies/:id/actors - Get actors/cast for a movie
+app.get("/api/movies/:id/actors", async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Verify movie exists
+    const movieResult = await query(
+      "SELECT id FROM movies WHERE id = $1",
+      [id]
+    );
+    
+    if (movieResult.rows.length === 0) {
+      return res.status(404).json({ error: "Movie not found" });
+    }
+    
+    // Fetch actors from database
+    const actors = await fetchMovieActors(id);
+    
+    res.json({
+      movieId: parseInt(id),
+      actors: actors,
+    });
+  } catch (error) {
+    console.error("Error fetching movie actors:", error);
+    res.status(500).json({ error: "Failed to fetch movie actors" });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Backend running on http://localhost:${PORT}`);
   console.log(
     `📊 Database endpoints ready: /api/movies, /api/login, /api/signup, /api/favourites, /api/watchlist, /api/ratings, /api/comments, /api/users`
   );
   console.log(`🎬 IMDB endpoints ready: /api/movies/:id/update-imdb-rating, /api/movies/update-all-imdb-ratings, /api/imdb/stats`);
+  console.log(`🖼️  Poster endpoints ready: /api/movies/:id/update-poster, /api/movies/update-all-posters`);
+  console.log(`🎭 Actor endpoints ready: /api/movies/:id/actors`);
   
   // Start the scheduler for automatic daily updates
   startScheduler();

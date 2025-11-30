@@ -10,6 +10,10 @@
     "verify-db": "node src/migrateToDatabase.js",
     "fetch-imdb-ratings": "node src/fetchImdbRatings.js",
     "update-imdb-ratings": "node -e \"require('./src/scheduler').updateRatingsJob().then(() => process.exit(0)).catch(e => { console.error(e); process.exit(1); })\"",
+    "fetch-posters": "node src/fetchMoviePosters.js",
+    "fetch-real-posters": "node src/fetchRealPosters.js",
+    "migrate-actors-table": "node src/migrations/createActorsTable.js",
+    "migrate-actors-data": "node src/migrations/migrateActorsToDatabase.js",
     "test": "echo \"No automated tests yet\" && exit 0"
   },
   "keywords": [],
