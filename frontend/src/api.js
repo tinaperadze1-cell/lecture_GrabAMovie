@@ -598,6 +598,173 @@ export const fetchMovieActors = async (movieId) => {
   }
 };
 
+/**
+ * Fetch now playing movies from TMDB
+ * @returns {Promise<Array>} Array of movie objects
+ */
+export const fetchNowPlayingMovies = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/movies/now-playing`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch now playing movies: ${response.statusText}`);
+    }
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error("API Error - fetchNowPlayingMovies:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch upcoming movies from TMDB
+ * @returns {Promise<Array>} Array of movie objects
+ */
+export const fetchUpcomingMovies = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/movies/upcoming`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch upcoming movies: ${response.statusText}`);
+    }
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error("API Error - fetchUpcomingMovies:", error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch all available snacks
+ * @returns {Promise<Array>} Array of snack objects
+ */
+export const fetchSnacks = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/snacks`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch snacks: ${response.statusText}`);
+    }
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error("API Error - fetchSnacks:", error);
+    throw error;
+  }
+};
+
+/**
+ * Create a showing for a movie
+ * @param {Object} showingData - Showing data (movieId, showtime, theaterName, totalSeats)
+ * @returns {Promise<Object>} Created showing object
+ */
+export const createShowing = async (showingData) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/showings`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(showingData),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || "Failed to create showing");
+    }
+
+    return data;
+  } catch (error) {
+    console.error("API Error - createShowing:", error);
+    throw error;
+  }
+};
+
+/**
+ * Get showings for a movie
+ * @param {number} movieId - Movie's ID
+ * @returns {Promise<Array>} Array of showing objects
+ */
+export const getShowings = async (movieId) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/showings/${movieId}`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch showings: ${response.statusText}`);
+    }
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error("API Error - getShowings:", error);
+    throw error;
+  }
+};
+
+/**
+ * Get seats for a showing
+ * @param {number} showingId - Showing's ID
+ * @returns {Promise<Array>} Array of seat objects
+ */
+export const getSeats = async (showingId) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/showings/${showingId}/seats`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch seats: ${response.statusText}`);
+    }
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error("API Error - getSeats:", error);
+    throw error;
+  }
+};
+
+/**
+ * Create a booking
+ * @param {Object} bookingData - Booking data (userId, movieId, showingId, seatIds, snacks, totalAmount)
+ * @returns {Promise<Object>} Created booking object
+ */
+export const createBooking = async (bookingData) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/bookings`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(bookingData),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || "Failed to create booking");
+    }
+
+    return data;
+  } catch (error) {
+    console.error("API Error - createBooking:", error);
+    throw error;
+  }
+};
+
+/**
+ * Get user's bookings
+ * @param {number} userId - User's ID
+ * @returns {Promise<Array>} Array of booking objects
+ */
+export const getUserBookings = async (userId) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/bookings/user/${userId}`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch bookings: ${response.statusText}`);
+    }
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error("API Error - getUserBookings:", error);
+    throw error;
+  }
+};
+
 // Export the base URL for direct access if needed
 export { API_BASE_URL };
 
