@@ -6,6 +6,19 @@ const { updateMovieRating, updateAllMovieRatings, getDailyRequestCount } = requi
 const { updateMoviePoster, updateAllMoviePosters } = require("./posterService");
 const { fetchMovieActors } = require("./actorService");
 const { startScheduler } = require("./scheduler");
+const { fetchNowPlayingMovies, fetchUpcomingMovies, getMovieDetails } = require("./tmdbService");
+
+// Log TMDB API key status on server start (for debugging)
+const tmdbKey = process.env.TMDB_API_KEY;
+if (!tmdbKey || tmdbKey === "MY_KEY_HERE" || tmdbKey === "my_real_key" || tmdbKey.trim() === "") {
+  console.warn("⚠️  WARNING: TMDB_API_KEY is not set in .env file!");
+  console.warn("   The 'Soon to be Released' feature will not work.");
+  console.warn("   To fix: Add TMDB_API_KEY=your_key to backend/.env");
+  console.warn("   Get your free key from: https://www.themoviedb.org/settings/api");
+  console.warn("   Or run: node add-tmdb-key.js YOUR_ACTUAL_KEY");
+} else {
+  console.log(`✅ TMDB_API_KEY is configured (${tmdbKey.substring(0, 8)}...${tmdbKey.substring(tmdbKey.length - 4)})`);
+}
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -1104,6 +1117,349 @@ app.get("/api/movies/:id/actors", async (req, res) => {
   }
 });
 
+// ============================================
+// BOOKING SYSTEM ENDPOINTS
+// ============================================
+
+// GET /api/movies/now-playing - Fetch now playing movies from TMDB
+app.get("/api/movies/now-playing", async (req, res) => {
+  try {
+    const apiKey = process.env.TMDB_API_KEY;
+    if (!apiKey || apiKey === "MY_KEY_HERE" || apiKey === "my_real_key" || apiKey.trim() === "") {
+      console.warn("⚠️  /api/movies/now-playing called but TMDB_API_KEY is not set");
+      return res.status(503).json({ 
+        error: "TMDB_API_KEY not configured",
+        message: "Please add TMDB_API_KEY to backend/.env file. Get your free key from https://www.themoviedb.org/settings/api"
+      });
+    }
+    const movies = await fetchNowPlayingMovies();
+    if (movies.length === 0) {
+      console.warn("⚠️  TMDB API returned empty array for now playing movies");
+    }
+    res.json(movies);
+  } catch (error) {
+    console.error("Error fetching now playing movies:", error);
+    res.status(500).json({ 
+      error: "Failed to fetch now playing movies",
+      details: error.message 
+    });
+  }
+});
+
+// GET /api/movies/upcoming - Fetch upcoming movies from TMDB
+app.get("/api/movies/upcoming", async (req, res) => {
+  try {
+    const apiKey = process.env.TMDB_API_KEY;
+    if (!apiKey || apiKey === "MY_KEY_HERE" || apiKey === "my_real_key" || apiKey.trim() === "") {
+      console.warn("⚠️  /api/movies/upcoming called but TMDB_API_KEY is not set");
+      return res.status(503).json({ 
+        error: "TMDB_API_KEY not configured",
+        message: "Please add TMDB_API_KEY to backend/.env file. Get your free key from https://www.themoviedb.org/settings/api"
+      });
+    }
+    const movies = await fetchUpcomingMovies();
+    if (movies.length === 0) {
+      console.warn("⚠️  TMDB API returned empty array for upcoming movies");
+    }
+    res.json(movies);
+  } catch (error) {
+    console.error("Error fetching upcoming movies:", error);
+    res.status(500).json({ 
+      error: "Failed to fetch upcoming movies",
+      details: error.message 
+    });
+  }
+});
+
+// GET /api/tmdb/status - Check TMDB API configuration status
+app.get("/api/tmdb/status", (req, res) => {
+  const apiKey = process.env.TMDB_API_KEY;
+  const hasKey = apiKey && apiKey !== "MY_KEY_HERE" && apiKey !== "my_real_key" && apiKey.trim() !== "";
+  res.json({
+    configured: hasKey,
+    keyLength: hasKey ? apiKey.length : 0,
+    message: hasKey 
+      ? "TMDB API key is configured" 
+      : "TMDB_API_KEY is not set in .env file. Get your free key from https://www.themoviedb.org/settings/api"
+  });
+});
+
+// GET /api/snacks - Fetch all available snacks
+app.get("/api/snacks", async (req, res) => {
+  try {
+    const result = await query(
+      "SELECT * FROM snacks WHERE available = true ORDER BY category, name"
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Error fetching snacks:", error);
+    res.status(500).json({ error: "Failed to fetch snacks" });
+  }
+});
+
+// POST /api/showings - Create a showing for a movie
+app.post("/api/showings", async (req, res) => {
+  try {
+    const { movieId, tmdbId, showtime, theaterName = "Main Theater", totalSeats = 80 } = req.body;
+
+    if ((!movieId && !tmdbId) || !showtime) {
+      return res.status(400).json({ error: "movieId or tmdbId and showtime are required" });
+    }
+
+    let dbMovieId = movieId;
+
+    // If tmdbId is provided, find or create movie in database
+    if (tmdbId && !movieId) {
+      // Check if movie exists with this tmdb_id
+      const existingMovie = await query(
+        "SELECT id FROM movies WHERE tmdb_id = $1",
+        [tmdbId]
+      );
+
+      if (existingMovie.rows.length > 0) {
+        dbMovieId = existingMovie.rows[0].id;
+      } else {
+        // Check if this is a fake 2025 movie ID (2025xxx format)
+        // For these, we need movie data from the request body
+        if (tmdbId >= 2025000 && tmdbId < 2026000) {
+          // This is a 2025 movie - check if we have movie data in request
+          const { movieTitle, movieYear, movieGenre, movieDescription, moviePoster } = req.body;
+          
+          if (movieTitle) {
+            // Create movie from provided data
+            const newMovieResult = await query(
+              `INSERT INTO movies (title, year, genre, description, poster_url, tmdb_id, release_date)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)
+               RETURNING id`,
+              [
+                movieTitle,
+                movieYear || new Date().getFullYear(),
+                movieGenre || "Unknown",
+                movieDescription || "",
+                moviePoster || null,
+                tmdbId,
+                null,
+              ]
+            );
+            dbMovieId = newMovieResult.rows[0].id;
+          } else {
+            return res.status(400).json({ error: "Movie data required for 2025 movies. Please provide movieTitle, movieYear, movieGenre, movieDescription, and moviePoster in request body." });
+          }
+        } else {
+          // Real TMDB ID - fetch from TMDB API
+          const tmdbMovie = await getMovieDetails(tmdbId);
+          
+          if (tmdbMovie) {
+            const newMovieResult = await query(
+              `INSERT INTO movies (title, year, genre, description, poster_url, tmdb_id, release_date)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)
+               RETURNING id`,
+              [
+                tmdbMovie.title,
+                tmdbMovie.releaseDate ? new Date(tmdbMovie.releaseDate).getFullYear() : new Date().getFullYear(),
+                tmdbMovie.genres && tmdbMovie.genres.length > 0 ? tmdbMovie.genres[0].name : "Unknown",
+                tmdbMovie.overview || "",
+                tmdbMovie.posterPath || null,
+                tmdbId,
+                tmdbMovie.releaseDate || null,
+              ]
+            );
+            dbMovieId = newMovieResult.rows[0].id;
+          } else {
+            return res.status(404).json({ error: "Movie not found in TMDB" });
+          }
+        }
+      }
+    }
+
+    // Verify movie exists before creating showing
+    if (dbMovieId) {
+      const movieCheck = await query("SELECT id FROM movies WHERE id = $1", [dbMovieId]);
+      if (movieCheck.rows.length === 0) {
+        return res.status(404).json({ error: `Movie with ID ${dbMovieId} not found in database` });
+      }
+    }
+
+    // Create showing
+    const showingResult = await query(
+      `INSERT INTO showings (movie_id, showtime, theater_name, total_seats)
+       VALUES ($1, $2, $3, $4)
+       RETURNING *`,
+      [dbMovieId, showtime, theaterName, totalSeats]
+    );
+
+    const showing = showingResult.rows[0];
+
+    // Create seats for this showing (8 rows × 10 seats = 80 seats)
+    const rows = ["A", "B", "C", "D", "E", "F", "G", "H"];
+    const seatsPerRow = 10;
+    const seatPrice = 12.00; // Standard seat price
+
+    for (const row of rows) {
+      for (let seatNum = 1; seatNum <= seatsPerRow; seatNum++) {
+        await query(
+          `INSERT INTO seats (showing_id, row_label, seat_number, seat_type, price, is_reserved)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [showing.id, row, seatNum, "standard", seatPrice, false]
+        );
+      }
+    }
+
+    // Randomly reserve some seats for demo (about 20% of seats)
+    const totalSeatsCreated = rows.length * seatsPerRow;
+    const reservedCount = Math.floor(totalSeatsCreated * 0.2);
+    const seatIds = await query(
+      "SELECT id FROM seats WHERE showing_id = $1 ORDER BY RANDOM() LIMIT $2",
+      [showing.id, reservedCount]
+    );
+
+    for (const seat of seatIds.rows) {
+      await query("UPDATE seats SET is_reserved = true WHERE id = $1", [seat.id]);
+    }
+
+    res.json(showing);
+  } catch (error) {
+    console.error("Error creating showing:", error);
+    res.status(500).json({ error: "Failed to create showing" });
+  }
+});
+
+// GET /api/showings/:movieId - Get showings for a movie (by database ID or TMDB ID)
+app.get("/api/showings/:movieId", async (req, res) => {
+  try {
+    const { movieId } = req.params;
+    
+    // Try to find movie by database ID first
+    let dbMovieId = parseInt(movieId);
+    
+    // If not a valid number, try to find by TMDB ID
+    if (isNaN(dbMovieId)) {
+      const movieResult = await query(
+        "SELECT id FROM movies WHERE tmdb_id = $1",
+        [movieId]
+      );
+      if (movieResult.rows.length > 0) {
+        dbMovieId = movieResult.rows[0].id;
+      } else {
+        return res.json([]); // No movie found, return empty array
+      }
+    }
+    
+    const result = await query(
+      `SELECT * FROM showings 
+       WHERE movie_id = $1 
+       AND showtime > NOW()
+       ORDER BY showtime ASC`,
+      [dbMovieId]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Error fetching showings:", error);
+    res.status(500).json({ error: "Failed to fetch showings" });
+  }
+});
+
+// GET /api/showings/:showingId/seats - Get seats for a showing
+app.get("/api/showings/:showingId/seats", async (req, res) => {
+  try {
+    const { showingId } = req.params;
+    const result = await query(
+      `SELECT * FROM seats 
+       WHERE showing_id = $1 
+       ORDER BY row_label, seat_number`,
+      [showingId]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Error fetching seats:", error);
+    res.status(500).json({ error: "Failed to fetch seats" });
+  }
+});
+
+// POST /api/bookings - Create a booking
+app.post("/api/bookings", async (req, res) => {
+  try {
+    const { userId, movieId, showingId, seatIds, snacks, totalAmount } = req.body;
+
+    if (!userId || !movieId || !showingId || !seatIds || !Array.isArray(seatIds) || seatIds.length === 0) {
+      return res.status(400).json({ error: "userId, movieId, showingId, and seatIds are required" });
+    }
+
+    // Generate booking reference
+    const bookingReference = `BK${Date.now()}${Math.floor(Math.random() * 1000)}`;
+
+    // Create booking
+    const bookingResult = await query(
+      `INSERT INTO bookings (user_id, movie_id, showing_id, total_amount, booking_reference, status)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING *`,
+      [userId, movieId, showingId, totalAmount || 0, bookingReference, "confirmed"]
+    );
+
+    const booking = bookingResult.rows[0];
+
+    // Reserve seats
+    for (const seatId of seatIds) {
+      // Add seat to booking_seats
+      await query(
+        `INSERT INTO booking_seats (booking_id, seat_id)
+         VALUES ($1, $2)`,
+        [booking.id, seatId]
+      );
+
+      // Mark seat as reserved
+      await query(
+        `UPDATE seats SET is_reserved = true WHERE id = $1`,
+        [seatId]
+      );
+    }
+
+    // Add snacks if provided
+    if (snacks && Array.isArray(snacks) && snacks.length > 0) {
+      for (const snack of snacks) {
+        const snackData = await query("SELECT price FROM snacks WHERE id = $1", [snack.snackId]);
+        const snackPrice = snackData.rows[0]?.price || 0;
+
+        await query(
+          `INSERT INTO booking_snacks (booking_id, snack_id, quantity, price_at_purchase)
+           VALUES ($1, $2, $3, $4)`,
+          [booking.id, snack.snackId, snack.quantity, snackPrice]
+        );
+      }
+    }
+
+    res.json(booking);
+  } catch (error) {
+    console.error("Error creating booking:", error);
+    res.status(500).json({ error: "Failed to create booking" });
+  }
+});
+
+// GET /api/bookings/user/:userId - Get user's bookings
+app.get("/api/bookings/user/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const result = await query(
+      `SELECT 
+        b.*,
+        m.title as movie_title,
+        m.poster_url as movie_poster,
+        s.showtime,
+        s.theater_name
+       FROM bookings b
+       JOIN movies m ON b.movie_id = m.id
+       JOIN showings s ON b.showing_id = s.id
+       WHERE b.user_id = $1
+       ORDER BY b.booking_date DESC`,
+      [userId]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Error fetching user bookings:", error);
+    res.status(500).json({ error: "Failed to fetch bookings" });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Backend running on http://localhost:${PORT}`);
   console.log(
@@ -1112,6 +1468,7 @@ app.listen(PORT, () => {
   console.log(`🎬 IMDB endpoints ready: /api/movies/:id/update-imdb-rating, /api/movies/update-all-imdb-ratings, /api/imdb/stats`);
   console.log(`🖼️  Poster endpoints ready: /api/movies/:id/update-poster, /api/movies/update-all-posters`);
   console.log(`🎭 Actor endpoints ready: /api/movies/:id/actors`);
+  console.log(`🎫 Booking endpoints ready: /api/movies/now-playing, /api/movies/upcoming, /api/snacks, /api/showings, /api/bookings`);
   
   // Start the scheduler for automatic daily updates
   startScheduler();

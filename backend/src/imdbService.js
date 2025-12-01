@@ -111,7 +111,7 @@ async function fetchImdbRating(title, year = null) {
     };
   } catch (error) {
     console.error(`Error fetching IMDB rating for "${title}":`, error.message);
-    
+
     // Handle rate limiting
     if (error.response?.status === 401) {
       return {
@@ -240,7 +240,7 @@ async function updateAllMovieRatings(batchSize = 10, delayMs = 2000, forceUpdate
       // Process batch
       const batchPromises = batch.map(async (movie) => {
         const result = await updateMovieRating(movie.id, movie.title, movie.year);
-        
+
         if (result.success) {
           updated++;
           console.log(`✅ Updated: ${movie.title} (${result.rating}/10)`);

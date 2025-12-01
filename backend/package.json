@@ -14,6 +14,8 @@
     "fetch-real-posters": "node src/fetchRealPosters.js",
     "migrate-actors-table": "node src/migrations/createActorsTable.js",
     "migrate-actors-data": "node src/migrations/migrateActorsToDatabase.js",
+    "migrate-booking-tables": "node src/migrations/createBookingTables.js",
+    "seed-booking-data": "node src/migrations/seedBookingData.js",
     "test": "echo \"No automated tests yet\" && exit 0"
   },
   "keywords": [],
