@@ -28,10 +28,22 @@ import {
   fetchSnacks,
   createShowing,
   getShowings,
+  getRecommendations,
   getSeats,
   createBooking,
+  getQuizQuestions,
+  submitQuizResult,
+  getDailyBattle,
+  submitBattleVote,
+  getYesterdayWinner,
+  getMonthlyLeader,
+  getMovieBattleStats,
+  getTrendingMovies,
+  submitTrendingVote,
+  addTrendingMovie,
 } from "./api";
 import { nowPlaying2025, comingSoon2025 } from "./newReleases2025";
+import AdminPanel from "./AdminPanel";
 
 // Carousel component for newly released movies with Buy Ticket button
 function NewlyReleasedCarousel({ movies, onBuyTicket, loading }) {
@@ -126,13 +138,10 @@ function NewlyReleasedCarousel({ movies, onBuyTicket, loading }) {
                   alt={movie.title}
                   className="movie-card-poster"
                   onError={(e) => {
+                    // If image fails to load, replace with div placeholder
                     const container = e.target.parentElement;
-                    if (container) {
-                      // Replace broken image with placeholder
-                      const shortTitle = movie.title.length > 20 ? movie.title.substring(0, 20) : movie.title;
-                      const placeholderUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(shortTitle)}&size=500&background=1a1a2e&color=9ec9ff&bold=true&length=2`;
-                      e.target.src = placeholderUrl;
-                      e.target.onerror = null; // Prevent infinite loop
+                    if (container && e.target.tagName === 'IMG') {
+                      container.innerHTML = `<div class="movie-card-poster-placeholder"><span>🎬</span><span class="placeholder-title">${movie.title}</span></div>`;
                     }
                   }}
                 />
@@ -296,24 +305,16 @@ function HorizontalMovieCarousel({
               title="Click to view movie details"
             >
               <div className="movie-card-poster-container">
-                {movie.poster_url && movie.poster_url.trim() !== '' && movie.poster_url !== 'N/A' && (movie.poster_url.startsWith('http') || movie.poster_url.startsWith('//')) ? (
+                {movie.poster_url && movie.poster_url.trim() !== '' && movie.poster_url !== 'N/A' && (movie.poster_url.startsWith('http') || movie.poster_url.startsWith('//') || movie.poster_url.startsWith('m.media-amazon.com')) ? (
                   <img
-                    src={movie.poster_url.startsWith('//') ? `https:${movie.poster_url}` : movie.poster_url}
+                    src={movie.poster_url.startsWith('//') ? `https:${movie.poster_url}` : movie.poster_url.startsWith('m.media-amazon.com') ? `https://${movie.poster_url}` : movie.poster_url}
                     alt={movie.title}
                     className="movie-card-poster"
                   onError={(e) => {
-                    // Replace broken image with placeholder image URL
-                    const shortTitle = movie.title.length > 20 ? movie.title.substring(0, 20) : movie.title;
-                    const placeholderUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(shortTitle)}&size=500&background=1a1a2e&color=9ec9ff&bold=true&length=2`;
-                    if (e.target.src !== placeholderUrl) {
-                      e.target.src = placeholderUrl;
-                      e.target.onerror = null; // Prevent infinite loop
-                    } else {
-                      // If placeholder also fails, show div placeholder
-                      const container = e.target.parentElement;
-                      if (container) {
-                        container.innerHTML = `<div class="movie-card-poster-placeholder"><span>🎬</span><span class="placeholder-title">${movie.title}</span></div>`;
-                      }
+                    // If image fails to load, replace with div placeholder immediately
+                    const container = e.target.parentElement;
+                    if (container && e.target.tagName === 'IMG') {
+                      container.innerHTML = `<div class="movie-card-poster-placeholder"><span>🎬</span><span class="placeholder-title">${movie.title}</span></div>`;
                     }
                   }}
                   />
@@ -506,15 +507,12 @@ function HorizontalCarousel({ movies, onMovieClick, loading }) {
                   src={movie.poster_url.startsWith('//') ? `https:${movie.poster_url}` : movie.poster_url.startsWith('m.media-amazon.com') ? `https://${movie.poster_url}` : movie.poster_url}
                   alt={movie.title}
                   className="top-rated-poster"
+                  loading="lazy"
                   onError={(e) => {
-                    // Replace broken image with placeholder image URL
-                    const shortTitle = movie.title.length > 20 ? movie.title.substring(0, 20) : movie.title;
-                    const placeholderUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(shortTitle)}&size=500&background=1a1a2e&color=9ec9ff&bold=true&length=2`;
-                    if (e.target.src !== placeholderUrl) {
-                      e.target.src = placeholderUrl;
-                      e.target.onerror = null; // Prevent infinite loop
-                    } else {
-                      // If placeholder also fails, show div placeholder
+                    // If image fails to load (404), replace with placeholder
+                    // Note: Browser will log 404 to console before this handler runs - this is normal and unavoidable
+                    // The error handler ensures users see a placeholder instead of a broken image
+                    if (e.target.tagName === 'IMG') {
                       const placeholder = document.createElement('div');
                       placeholder.className = 'top-rated-poster-placeholder';
                       placeholder.innerHTML = `<span>🎬</span><span class="placeholder-title">${movie.title}</span>`;
@@ -590,6 +588,7 @@ function HorizontalCarousel({ movies, onMovieClick, loading }) {
 function App() {
   const [movies, setMovies] = useState([]);
   const [topRatedMovies, setTopRatedMovies] = useState([]); // Top-rated movies
+  const [topRatedLoading, setTopRatedLoading] = useState(true); // Loading state for top-rated movies
   const [ratings, setRatings] = useState({}); // User's current ratings
   const [movieRatings, setMovieRatings] = useState({}); // Average ratings for each movie
   const [comments, setComments] = useState({}); // Comments for each movie { movieId: [comments] }
@@ -610,8 +609,25 @@ function App() {
   });
   const [filteredMovies, setFilteredMovies] = useState([]);
   const [selectedMovie, setSelectedMovie] = useState(null); // null = list view, movie object = detail view
+  const [showQuiz, setShowQuiz] = useState(false); // Show quiz page
+  const [quizQuestions, setQuizQuestions] = useState([]);
+  const [quizAnswers, setQuizAnswers] = useState({}); // { questionIndex: selectedAnswer }
+  const [quizSubmitted, setQuizSubmitted] = useState(false);
+  const [quizLoading, setQuizLoading] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
-  const [currentPage, setCurrentPage] = useState("home"); // "home", "ratings", "watchlist", or "favorites"
+  const [currentPage, setCurrentPage] = useState("home"); // "home", "ratings", "watchlist", "favorites", or "battle"
+  const [battle, setBattle] = useState(null);
+  const [battleLoading, setBattleLoading] = useState(true);
+  const [hasVoted, setHasVoted] = useState(false);
+  const [yesterdayWinner, setYesterdayWinner] = useState(null);
+  const [monthlyLeader, setMonthlyLeader] = useState(null);
+  const [movie1Stats, setMovie1Stats] = useState(null);
+  const [movie2Stats, setMovie2Stats] = useState(null);
+  const [showBattlePopup, setShowBattlePopup] = useState(false);
+  const [trendingMovies, setTrendingMovies] = useState([]);
+  const [trendingLoading, setTrendingLoading] = useState(true);
+  const [showAddMovieModal, setShowAddMovieModal] = useState(false);
+  const [newMovieTitle, setNewMovieTitle] = useState("");
   const [previousPage, setPreviousPage] = useState("home"); // Track which page we came from before viewing movie detail
   const [userProfile, setUserProfile] = useState(null);
   const [userRatingsHistory, setUserRatingsHistory] = useState([]);
@@ -632,6 +648,8 @@ function App() {
   const [watchlistLoading, setWatchlistLoading] = useState(false);
   const [favoritesMovies, setFavoritesMovies] = useState([]); // Full movie objects for favorites page
   const [favoritesLoading, setFavoritesLoading] = useState(false);
+  const [recommendedMovies, setRecommendedMovies] = useState([]); // Recommended movies
+  const [recommendationsLoading, setRecommendationsLoading] = useState(false);
   const [authMode, setAuthMode] = useState("signin"); // "signin" or "signup"
   const [authError, setAuthError] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
@@ -653,6 +671,9 @@ function App() {
     return savedColor || "#6699ff";
   });
   const [fabOpen, setFabOpen] = useState(false); // Floating Action Button open state
+  const [showAdminPanel, setShowAdminPanel] = useState(false); // Admin panel state
+  const [isAdmin, setIsAdmin] = useState(false); // Admin status
+  const [shouldRedirectToAdmin, setShouldRedirectToAdmin] = useState(false); // Flag for redirect after login
   
   // Booking flow state
   const [nowPlayingMovies, setNowPlayingMovies] = useState([]);
@@ -816,6 +837,11 @@ function App() {
         setComments(commentsData);
       } catch (error) {
         console.error("Error fetching movies:", error);
+        console.error("Full error details:", error);
+        // Check if it's a connection error
+        if (error.message && (error.message.includes("Failed to fetch") || error.message.includes("NetworkError"))) {
+          console.error("⚠️ Backend server might not be running. Make sure to start it with: cd backend && npm start");
+        }
         // Fallback to empty array if API fails
         setMovies([]);
       } finally {
@@ -829,12 +855,15 @@ function App() {
   // Load top-rated movies
   useEffect(() => {
     const loadTopRated = async () => {
+      setTopRatedLoading(true);
       try {
         const data = await fetchTopRatedMovies(10);
         setTopRatedMovies(data);
       } catch (error) {
         console.error("Error fetching top-rated movies:", error);
         setTopRatedMovies([]);
+      } finally {
+        setTopRatedLoading(false);
       }
     };
 
@@ -1084,6 +1113,99 @@ function App() {
     loadFavoritesMovies();
   }, [currentPage, favourites, currentUser, isAuthenticated]);
 
+  // Load personalized recommendations
+  useEffect(() => {
+    const loadRecommendations = async () => {
+      if (currentUser && isAuthenticated && currentPage === "home") {
+        setRecommendationsLoading(true);
+        try {
+          const recommendations = await getRecommendations(currentUser.id);
+          setRecommendedMovies(recommendations);
+        } catch (error) {
+          console.error("Error loading recommendations:", error);
+          setRecommendedMovies([]);
+        } finally {
+          setRecommendationsLoading(false);
+        }
+      } else {
+        setRecommendedMovies([]);
+      }
+    };
+
+    loadRecommendations();
+  }, [currentUser, isAuthenticated, currentPage, ratings, favourites, watchlist]);
+
+  // Load battle data when battle page is opened
+  useEffect(() => {
+    const loadBattleData = async () => {
+      if (currentPage === "battle") {
+        setBattleLoading(true);
+        try {
+          const userId = currentUser?.id || null;
+          const battleData = await getDailyBattle(userId);
+          setBattle(battleData);
+          setHasVoted(battleData.hasVoted || false);
+
+          // Load stats for both movies
+          const [stats1, stats2] = await Promise.all([
+            getMovieBattleStats(battleData.movie1.id),
+            getMovieBattleStats(battleData.movie2.id),
+          ]);
+          setMovie1Stats(stats1);
+          setMovie2Stats(stats2);
+
+          // Load yesterday winner and monthly leader
+          const [yesterday, leader] = await Promise.all([
+            getYesterdayWinner(),
+            getMonthlyLeader(),
+          ]);
+          setYesterdayWinner(yesterday);
+          setMonthlyLeader(leader);
+        } catch (error) {
+          console.error("Error loading battle data:", error);
+          setBattle(null);
+        } finally {
+          setBattleLoading(false);
+        }
+      }
+    };
+    loadBattleData();
+  }, [currentPage, currentUser]);
+
+  // Show popup on site open (check localStorage for dismissed state)
+  useEffect(() => {
+    const hasSeenPopup = localStorage.getItem("battle_popup_dismissed");
+    const lastDismissedDate = localStorage.getItem("battle_popup_dismissed_date");
+    const today = new Date().toISOString().split('T')[0];
+    
+    // Show popup if never seen, or if dismissed yesterday or earlier
+    if (!hasSeenPopup || lastDismissedDate !== today) {
+      setTimeout(() => {
+        setShowBattlePopup(true);
+      }, 2000); // Show after 2 seconds
+    }
+  }, []);
+
+  // Load trending movies for leaderboard
+  useEffect(() => {
+    const loadTrendingMovies = async () => {
+      if (currentPage === "home") {
+        setTrendingLoading(true);
+        try {
+          const userId = currentUser?.id || null;
+          const movies = await getTrendingMovies(5, userId);
+          setTrendingMovies(movies);
+        } catch (error) {
+          console.error("Error loading trending movies:", error);
+          setTrendingMovies([]);
+        } finally {
+          setTrendingLoading(false);
+        }
+      }
+    };
+    loadTrendingMovies();
+  }, [currentPage, currentUser]);
+
   const handleRating = async (movieId, rating) => {
     if (!currentUser) {
       alert("Please sign in to rate movies");
@@ -1121,70 +1243,100 @@ function App() {
   };
 
   const handleFavouriteClick = async (movieId) => {
+    console.log("handleFavouriteClick called with movieId:", movieId, "type:", typeof movieId);
     if (!currentUser) {
       alert("Please sign in to add favorites");
       return;
     }
 
-    const isFavourite = favourites.has(movieId);
+    const movieIdNum = Number(movieId);
+    const isFavourite = favourites.has(movieIdNum);
+    console.log("isFavourite:", isFavourite, "movieIdNum:", movieIdNum);
 
     try {
       if (isFavourite) {
         // Remove from favourites
-        await removeFromFavourites(currentUser.id, movieId);
+        await removeFromFavourites(currentUser.id, movieIdNum);
         setFavourites((prev) => {
           const newSet = new Set(prev);
-          newSet.delete(Number(movieId));
+          newSet.delete(movieIdNum);
           return newSet;
         });
         // Remove from favoritesMovies if on favorites page
         if (currentPage === "favorites") {
-          setFavoritesMovies((prev) => prev.filter(movie => movie.id !== Number(movieId)));
+          setFavoritesMovies((prev) => prev.filter(movie => movie.id !== movieIdNum));
         }
-        alert("Removed from Favourites");
+        // Don't show alert for removal - it's less intrusive
       } else {
         // Add to favourites
-        await addToFavourites(currentUser.id, movieId);
-        setFavourites((prev) => new Set([...prev, Number(movieId)]));
-        alert("Added to Favourites");
+        try {
+          await addToFavourites(currentUser.id, movieIdNum);
+          setFavourites((prev) => new Set([...prev, movieIdNum]));
+          // Don't show alert for addition - it's less intrusive
+        } catch (addError) {
+          // If it's already in favourites (409 conflict), just update the UI
+          if (addError.message && addError.message.includes("already")) {
+            setFavourites((prev) => new Set([...prev, movieIdNum]));
+          } else {
+            throw addError;
+          }
+        }
       }
     } catch (error) {
       console.error("Error toggling favourite:", error);
-      alert(error.message || "Failed to update favourites");
+      // Only show alert for unexpected errors (not 404s or "already" messages)
+      if (!error.message || (!error.message.includes("already") && !error.message.includes("not found") && !error.message.includes("not in"))) {
+        alert(error.message || "Failed to update favourites");
+      }
     }
   };
 
   const handleWatchlistClick = async (movieId) => {
+    console.log("🔥 handleWatchlistClick called with movieId:", movieId, "type:", typeof movieId);
     if (!currentUser) {
       alert("Please sign in to add to watchlist");
       return;
     }
 
-    const isInWatchlist = watchlist.has(movieId);
+    const movieIdNum = Number(movieId);
+    const isInWatchlist = watchlist.has(movieIdNum);
+    console.log("isInWatchlist:", isInWatchlist, "movieIdNum:", movieIdNum);
 
     try {
       if (isInWatchlist) {
         // Remove from watchlist
-        await removeFromWatchlist(currentUser.id, movieId);
+        await removeFromWatchlist(currentUser.id, movieIdNum);
         setWatchlist((prev) => {
           const newSet = new Set(prev);
-          newSet.delete(Number(movieId));
+          newSet.delete(movieIdNum);
           return newSet;
         });
         // Remove from watchlistMovies if on watchlist page
         if (currentPage === "watchlist") {
-          setWatchlistMovies((prev) => prev.filter(movie => movie.id !== Number(movieId)));
+          setWatchlistMovies((prev) => prev.filter(movie => movie.id !== movieIdNum));
         }
-        alert("Removed from Watchlist");
+        // Don't show alert for removal - it's less intrusive
       } else {
         // Add to watchlist
-        await addToWatchlist(currentUser.id, movieId);
-        setWatchlist((prev) => new Set([...prev, Number(movieId)]));
-        alert("Added to Watchlist");
+        try {
+          await addToWatchlist(currentUser.id, movieIdNum);
+          setWatchlist((prev) => new Set([...prev, movieIdNum]));
+          // Don't show alert for addition - it's less intrusive
+        } catch (addError) {
+          // If it's already in watchlist (409 conflict), just update the UI
+          if (addError.message && addError.message.includes("already")) {
+            setWatchlist((prev) => new Set([...prev, movieIdNum]));
+          } else {
+            throw addError;
+          }
+        }
       }
     } catch (error) {
       console.error("Error toggling watchlist:", error);
-      alert(error.message || "Failed to update watchlist");
+      // Only show alert for unexpected errors (not 404s or "already" messages)
+      if (!error.message || (!error.message.includes("already") && !error.message.includes("not found") && !error.message.includes("not in"))) {
+        alert(error.message || "Failed to update watchlist");
+      }
     }
   };
 
@@ -1285,8 +1437,17 @@ function App() {
 
   const handleMovieClick = async (movieId) => {
     try {
+      // Scroll to top immediately before loading
+      window.scrollTo(0, 0);
+      
       // Save the current page before showing movie detail
       setPreviousPage(currentPage);
+      
+      // Reset quiz state when clicking a movie
+      setShowQuiz(false);
+      setQuizQuestions([]);
+      setQuizAnswers({});
+      setQuizSubmitted(false);
       
       // Fetch full movie details
       const movie = await fetchMovie(movieId);
@@ -1304,21 +1465,179 @@ function App() {
         setActorsLoading((prev) => ({ ...prev, [movieId]: false }));
       }
 
-      // Scroll to top
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      // Scroll to top again after content loads (with a small delay to ensure DOM is updated)
+      setTimeout(() => {
+        window.scrollTo(0, 0);
+      }, 100);
     } catch (error) {
       console.error("Error loading movie details:", error);
       alert("Failed to load movie details");
+      // Reset state on error
+      setSelectedMovie(null);
+      setShowQuiz(false);
     }
   };
 
   const handleBackToList = () => {
     setSelectedMovie(null);
+    setShowQuiz(false);
+    setQuizQuestions([]);
+    setQuizAnswers({});
+    setQuizSubmitted(false);
     setShowProfile(false);
     setProfileEditMode(false);
     // Return to the page we came from before viewing the movie
     setCurrentPage(previousPage);
     window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleTakeQuiz = async () => {
+    if (!selectedMovie) return;
+    
+    setQuizLoading(true);
+    setQuizAnswers({});
+    setQuizSubmitted(false);
+    
+    try {
+      const questions = await getQuizQuestions(selectedMovie.id);
+      if (!questions || !Array.isArray(questions) || questions.length === 0) {
+        throw new Error("No quiz questions available for this movie");
+      }
+      setQuizQuestions(questions);
+      setShowQuiz(true);
+      window.scrollTo(0, 0);
+    } catch (error) {
+      console.error("Error loading quiz:", error);
+      const errorMessage = error.message || "Failed to load quiz questions. Please try again.";
+      alert(errorMessage);
+    } finally {
+      setQuizLoading(false);
+    }
+  };
+
+  const handleQuizAnswer = (questionIndex, answer) => {
+    if (quizSubmitted) return;
+    setQuizAnswers(prev => ({ ...prev, [questionIndex]: answer }));
+  };
+
+  const handleQuizSubmit = async () => {
+    if (!selectedMovie || !quizQuestions || quizQuestions.length === 0) return;
+
+    try {
+      // Calculate score
+      const score = Object.keys(quizAnswers).reduce((total, index) => {
+        const userAnswer = quizAnswers[index];
+        const correctAnswer = quizQuestions[index].correctAnswer;
+        return total + (userAnswer === correctAnswer ? 1 : 0);
+      }, 0);
+
+      const totalQuestions = quizQuestions.length;
+      const userId = currentUser?.id || null;
+
+      // Submit results to database
+      await submitQuizResult(
+        selectedMovie.id,
+        userId,
+        score,
+        totalQuestions,
+        quizAnswers
+      );
+
+      setQuizSubmitted(true);
+    } catch (error) {
+      console.error("Error submitting quiz:", error);
+      alert("Failed to save quiz results. Please try again.");
+    }
+  };
+
+  const handleBackFromQuiz = () => {
+    setShowQuiz(false);
+    setQuizQuestions([]);
+    setQuizAnswers({});
+    setQuizSubmitted(false);
+    window.scrollTo(0, 0);
+  };
+
+  const handleBattleVote = async (votedForMovieId) => {
+    if (!battle || hasVoted) return;
+
+    try {
+      const userId = currentUser?.id || null;
+      const result = await submitBattleVote(battle.id, votedForMovieId, userId);
+      
+      // Update battle state with new vote counts
+      setBattle(prev => ({
+        ...prev,
+        movie1Votes: result.movie1Votes,
+        movie2Votes: result.movie2Votes,
+      }));
+      setHasVoted(true);
+
+      // Reload stats for both movies
+      const [stats1, stats2] = await Promise.all([
+        getMovieBattleStats(battle.movie1.id),
+        getMovieBattleStats(battle.movie2.id),
+      ]);
+      setMovie1Stats(stats1);
+      setMovie2Stats(stats2);
+    } catch (error) {
+      console.error("Error submitting vote:", error);
+      alert(error.message || "Failed to submit vote. Please try again.");
+    }
+  };
+
+  const handleBattlePageClick = () => {
+    setCurrentPage("battle");
+    setShowBattlePopup(false);
+    window.scrollTo(0, 0);
+  };
+
+  const handleDismissBattlePopup = () => {
+    setShowBattlePopup(false);
+    const today = new Date().toISOString().split('T')[0];
+    localStorage.setItem("battle_popup_dismissed", "true");
+    localStorage.setItem("battle_popup_dismissed_date", today);
+  };
+
+  const handleTrendingVote = async (movieId) => {
+    try {
+      const userId = currentUser?.id || null;
+      const result = await submitTrendingVote(movieId, userId);
+      
+      // Update the movie's vote count in the list
+      setTrendingMovies(prev => prev.map(movie => 
+        movie.id === movieId 
+          ? { ...movie, votes: result.votes, hasVoted: true }
+          : movie
+      ));
+      
+      // Sort by votes descending
+      setTrendingMovies(prev => [...prev].sort((a, b) => b.votes - a.votes));
+    } catch (error) {
+      console.error("Error submitting trending vote:", error);
+      alert(error.message || "Failed to submit vote. You may have already voted for this movie this month.");
+    }
+  };
+
+  const handleAddTrendingMovie = async () => {
+    if (!newMovieTitle.trim()) {
+      alert("Please enter a movie title");
+      return;
+    }
+
+    try {
+      const userId = currentUser?.id || null;
+      const result = await addTrendingMovie(null, newMovieTitle.trim(), null, userId);
+      
+      // Add the new movie to the list
+      setTrendingMovies(prev => [...prev, { ...result.movie, hasVoted: false }].sort((a, b) => b.votes - a.votes));
+      
+      setNewMovieTitle("");
+      setShowAddMovieModal(false);
+    } catch (error) {
+      console.error("Error adding trending movie:", error);
+      alert(error.message || "Failed to add movie. It may already be in the list.");
+    }
   };
 
   // Dynamic mood-based backgrounds based on selected movie genre
@@ -1382,12 +1701,36 @@ function App() {
     };
   }, [selectedMovie]);
 
+  // Scroll to top when movie detail page opens
+  useEffect(() => {
+    if (selectedMovie) {
+      // Scroll immediately and also after a short delay to ensure DOM is updated
+      window.scrollTo(0, 0);
+      const timeoutId = setTimeout(() => {
+        window.scrollTo(0, 0);
+        // Also try scrolling the main container if it exists
+        const mainElement = document.querySelector('main');
+        if (mainElement) {
+          mainElement.scrollTop = 0;
+        }
+        const pageElement = document.querySelector('.page');
+        if (pageElement) {
+          pageElement.scrollTop = 0;
+        }
+        
+      }, 100);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [selectedMovie, currentUser]);
+
   const handleHomeClick = (e) => {
     e.preventDefault();
     // Close profile and selected movie views
     setShowProfile(false);
     setSelectedMovie(null);
     setProfileEditMode(false);
+    setShowAdminPanel(false);
+    window.location.hash = "";
     // Switch to home page
     setCurrentPage("home");
     // Scroll to top
@@ -1400,6 +1743,8 @@ function App() {
     setShowProfile(false);
     setSelectedMovie(null);
     setProfileEditMode(false);
+    setShowAdminPanel(false);
+    window.location.hash = "";
     // Switch to ratings page
     setCurrentPage("ratings");
     // Scroll to top
@@ -1412,6 +1757,8 @@ function App() {
     setShowProfile(false);
     setProfileEditMode(false);
     setSelectedMovie(null);
+    setShowAdminPanel(false);
+    window.location.hash = "";
     // Switch to watchlist page
     setCurrentPage("watchlist");
     // Scroll to top
@@ -1424,6 +1771,8 @@ function App() {
     setShowProfile(false);
     setProfileEditMode(false);
     setSelectedMovie(null);
+    setShowAdminPanel(false);
+    window.location.hash = "";
     // Switch to favorites page
     setCurrentPage("favorites");
     // Scroll to top
@@ -1819,6 +2168,21 @@ function App() {
         localStorage.setItem("grabamovie_user", JSON.stringify(data.user));
         setIsAuthenticated(true);
         setAuthError("");
+        
+        // Check if user is admin and redirect if so
+        try {
+          const profile = await getUserProfile(data.user.id);
+          // Handle both boolean true/false and string "true"/"false"
+          const adminStatus = profile.is_admin === true || profile.is_admin === "true" || profile.is_admin === 1;
+          console.log("Login admin check:", { userId: data.user.id, is_admin: profile.is_admin, adminStatus });
+          setIsAdmin(adminStatus);
+          
+          // Don't auto-redirect - admin can click button to access panel when ready
+        } catch (err) {
+          console.error("Error checking admin status:", err);
+          setIsAdmin(false);
+        }
+        
         // Favourites and watchlist will be loaded by useEffect when currentUser changes
       }
     } catch (error) {
@@ -1830,6 +2194,95 @@ function App() {
       setAuthLoading(false);
     }
   };
+
+  // Check admin status when user is loaded from localStorage
+  useEffect(() => {
+    const checkAdminStatus = async () => {
+      if (currentUser && isAuthenticated) {
+        try {
+          const profile = await getUserProfile(currentUser.id);
+          // Handle both boolean true/false and string "true"/"false"
+          const adminStatus = profile.is_admin === true || profile.is_admin === "true" || profile.is_admin === 1;
+          console.log("Admin status check:", { userId: currentUser.id, is_admin: profile.is_admin, adminStatus });
+          setIsAdmin(adminStatus);
+          
+          // Don't auto-redirect - admin can click button to access panel
+          // Admin button will be visible in navigation when isAdmin is true
+        } catch (err) {
+          console.error("Error checking admin status:", err);
+          setIsAdmin(false);
+        }
+      } else {
+        setIsAdmin(false);
+      }
+    };
+    checkAdminStatus();
+  }, [currentUser, isAuthenticated, shouldRedirectToAdmin]);
+
+  // Check URL hash on mount and when hash changes
+  useEffect(() => {
+    const checkHash = () => {
+      if (window.location.hash === "#admin" && currentUser && isAdmin) {
+        setShowAdminPanel(true);
+      } else if (window.location.hash === "#admin" && (!currentUser || !isAdmin)) {
+        // If not admin, remove hash and show error
+        window.location.hash = "";
+        alert("Access denied. Admin privileges required.");
+      }
+    };
+
+    checkHash();
+    window.addEventListener("hashchange", checkHash);
+    return () => window.removeEventListener("hashchange", checkHash);
+  }, [currentUser, isAdmin]);
+
+  // Show admin panel if requested or if hash is #admin
+  if ((showAdminPanel || window.location.hash === "#admin") && currentUser && isAdmin) {
+    return (
+      <AdminPanel
+        currentUser={currentUser}
+        onBack={() => {
+          setShowAdminPanel(false);
+          window.location.hash = "";
+        }}
+      />
+    );
+  }
+  
+  // If hash is #admin but user is not admin, show access denied
+  if (window.location.hash === "#admin" && (!currentUser || !isAdmin)) {
+    return (
+      <div className="page" style={{ 
+        padding: "50px", 
+        textAlign: "center", 
+        minHeight: "100vh", 
+        display: "flex", 
+        flexDirection: "column", 
+        justifyContent: "center", 
+        alignItems: "center",
+        background: "#1a1a1a",
+        color: "#fff"
+      }}>
+        <h1 style={{ color: "#ff6b6b", marginBottom: "20px", fontSize: "2.5rem" }}>Access Denied</h1>
+        <p style={{ color: "#ccc", marginBottom: "30px", fontSize: "1.2rem" }}>You must be an administrator to access this panel.</p>
+        <button 
+          onClick={() => { window.location.hash = ""; }} 
+          style={{
+            padding: "12px 24px",
+            background: "#4caf50",
+            color: "#fff",
+            border: "none",
+            borderRadius: "5px",
+            cursor: "pointer",
+            fontSize: "16px",
+            fontWeight: "bold"
+          }}
+        >
+          Go Back
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="page">
@@ -1921,27 +2374,13 @@ function App() {
       )}
 
       <div className={`desktop-frame ${isAuthenticated ? "" : "blurred"}`}>
+        {/* Admin notification banner - Removed to avoid clutter, button in nav is enough */}
         <header className="site-header">
           <div className={`brand brand-${theme}`} data-theme={theme}>GRABAMOVIE</div>
-          <nav>
-            <a href="#hero" onClick={handleHomeClick}>Home</a>
-            <a href="#ratings" onClick={handleRatingsClick}>Ratings</a>
-            {isAuthenticated && currentUser && (
-              <>
-                <a href="#watchlist" onClick={handleWatchlistPageClick}>Watchlist</a>
-                <a href="#favorites" onClick={handleFavoritesPageClick}>Favorites</a>
-                <a
-                  href="#profile"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    handleProfileClick();
-                  }}
-                  className="nav-edit-link"
-                >
-                  Edit
-                </a>
-              </>
-            )}
+          <div className="header-right">
+            <nav>
+              <a href="#hero" onClick={handleHomeClick}>Home</a>
+            </nav>
             <div className="search-container">
               <input
                 type="text"
@@ -1975,13 +2414,14 @@ function App() {
                           alt={movie.title}
                           className="search-result-poster"
                           onError={(e) => {
-                            const shortTitle = movie.title.length > 20 ? movie.title.substring(0, 20) : movie.title;
-                            const placeholderUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(shortTitle)}&size=500&background=1a1a2e&color=9ec9ff&bold=true&length=2`;
-                            if (e.target.src !== placeholderUrl) {
-                              e.target.src = placeholderUrl;
-                              e.target.onerror = null;
-                            } else {
-                              e.target.style.display = "none";
+                            // If image fails to load, hide it and show placeholder
+                            e.target.style.display = "none";
+                            const container = e.target.parentElement;
+                            if (container && !container.querySelector('.search-result-poster-placeholder')) {
+                              const placeholder = document.createElement('div');
+                              placeholder.className = 'search-result-poster-placeholder';
+                              placeholder.textContent = '🎬';
+                              container.insertBefore(placeholder, e.target);
                             }
                           }}
                         />
@@ -2107,7 +2547,7 @@ function App() {
                 </button>
               </div>
             )}
-          </nav>
+          </div>
         </header>
 
         <main>
@@ -2252,6 +2692,132 @@ function App() {
                 </div>
               </div>
             </section>
+          ) : showQuiz && selectedMovie ? (
+            <section className="quiz-area">
+              <button className="back-btn" onClick={handleBackFromQuiz}>
+                ← Back to Movie
+              </button>
+              
+              <div className="quiz-container">
+                <h1 className="quiz-title">Movie Quiz: {selectedMovie.title}</h1>
+                
+                {quizLoading ? (
+                  <div className="quiz-loading">Loading quiz questions...</div>
+                ) : quizQuestions.length === 0 ? (
+                  <div className="quiz-error">
+                    <p>No quiz questions available for this movie.</p>
+                    <button onClick={handleBackFromQuiz} className="quiz-back-btn">
+                      Go Back
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="quiz-questions">
+                      {quizQuestions.map((question, index) => {
+                        const userAnswer = quizAnswers[index];
+                        // Normalize answers for comparison (handle 9/10 vs 9.0/10)
+                        const normalizeAnswer = (answer) => {
+                          if (!answer) return null;
+                          // Extract number from "X/10" or "X.0/10" format
+                          const match = answer.toString().match(/(\d+\.?\d*)\/10/);
+                          return match ? parseFloat(match[1]) : null;
+                        };
+                        const userAnswerValue = normalizeAnswer(userAnswer);
+                        const correctAnswerValue = normalizeAnswer(question.correctAnswer);
+                        const isCorrect = userAnswerValue !== null && correctAnswerValue !== null && 
+                                          Math.abs(userAnswerValue - correctAnswerValue) < 0.01;
+                        const showResult = quizSubmitted;
+
+                        return (
+                          <div key={index} className="quiz-question">
+                            <div className="quiz-question-header">
+                              <span className="question-number">Question {index + 1}</span>
+                              <span className="question-category">{question.category}</span>
+                            </div>
+                            <h3 className="question-text">{question.question}</h3>
+                            <div className="quiz-options">
+                              {question.options.map((option, optIndex) => {
+                                const isSelected = userAnswer === option;
+                                const isCorrectOption = option === question.correctAnswer;
+                                let optionClass = "quiz-option";
+                                
+                                if (showResult) {
+                                  if (isCorrectOption) {
+                                    optionClass += " correct";
+                                  } else if (isSelected && !isCorrectOption) {
+                                    optionClass += " incorrect";
+                                  }
+                                } else if (isSelected) {
+                                  optionClass += " selected";
+                                }
+
+                                return (
+                                  <button
+                                    key={optIndex}
+                                    className={optionClass}
+                                    onClick={() => handleQuizAnswer(index, option)}
+                                    disabled={quizSubmitted}
+                                  >
+                                    {showResult && isCorrectOption && "✓ "}
+                                    {showResult && isSelected && !isCorrectOption && "✗ "}
+                                    {option}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            {showResult && (
+                              <div className={`quiz-feedback ${isCorrect ? "correct-feedback" : "incorrect-feedback"}`}>
+                                {isCorrect ? (
+                                  <span>✓ Correct!</span>
+                                ) : (
+                                  <span>✗ Incorrect. The correct answer is: <strong>{question.correctAnswer}</strong></span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {!quizSubmitted && (
+                      <div className="quiz-actions">
+                        <button
+                          className="quiz-submit-btn"
+                          onClick={handleQuizSubmit}
+                          disabled={Object.keys(quizAnswers).length < quizQuestions.length}
+                        >
+                          Submit Quiz
+                        </button>
+                        <p className="quiz-progress">
+                          Answered {Object.keys(quizAnswers).length} of {quizQuestions.length} questions
+                        </p>
+                      </div>
+                    )}
+
+                    {quizSubmitted && (
+                      <div className="quiz-results">
+                        <h2>Quiz Results</h2>
+                        <div className="quiz-score">
+                          {Object.keys(quizAnswers).reduce((score, index) => {
+                            return score + (quizAnswers[index] === quizQuestions[index].correctAnswer ? 1 : 0);
+                          }, 0)} / {quizQuestions.length}
+                        </div>
+                        <p className="quiz-percentage">
+                          {Math.round(
+                            (Object.keys(quizAnswers).reduce((score, index) => {
+                              return score + (quizAnswers[index] === quizQuestions[index].correctAnswer ? 1 : 0);
+                            }, 0) / quizQuestions.length) * 100
+                          )}% Correct
+                        </p>
+                        <button onClick={handleBackFromQuiz} className="quiz-back-btn">
+                          Back to Movie
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </section>
           ) : selectedMovie ? (
             <section className="movie-detail-area">
               <button className="back-btn" onClick={handleBackToList}>
@@ -2260,19 +2826,16 @@ function App() {
 
               <div className="movie-detail">
                 <div className="movie-detail-header">
-                  {selectedMovie.poster_url && selectedMovie.poster_url.trim() !== '' && selectedMovie.poster_url !== 'N/A' && (selectedMovie.poster_url.startsWith('http') || selectedMovie.poster_url.startsWith('//')) ? (
+                  {selectedMovie?.poster_url && selectedMovie.poster_url.trim() !== '' && selectedMovie.poster_url !== 'N/A' && (selectedMovie.poster_url.startsWith('http') || selectedMovie.poster_url.startsWith('//') || selectedMovie.poster_url.startsWith('m.media-amazon.com')) ? (
                     <img
-                      src={selectedMovie.poster_url.startsWith('//') ? `https:${selectedMovie.poster_url}` : selectedMovie.poster_url}
-                      alt={selectedMovie.title}
+                      src={selectedMovie.poster_url.startsWith('//') ? `https:${selectedMovie.poster_url}` : selectedMovie.poster_url.startsWith('m.media-amazon.com') ? `https://${selectedMovie.poster_url}` : selectedMovie.poster_url}
+                      alt={selectedMovie?.title || 'Movie poster'}
                       className="movie-poster"
                       onError={(e) => {
-                        const shortTitle = selectedMovie.title.length > 20 ? selectedMovie.title.substring(0, 20) : selectedMovie.title;
-                        const placeholderUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(shortTitle)}&size=500&background=1a1a2e&color=9ec9ff&bold=true&length=2`;
-                        if (e.target.src !== placeholderUrl) {
-                          e.target.src = placeholderUrl;
-                          e.target.onerror = null;
-                        } else {
-                          e.target.style.display = "none";
+                        // If image fails to load, replace with placeholder div
+                        const container = e.target.parentElement;
+                        if (container && e.target.tagName === 'IMG') {
+                          container.innerHTML = '<div class="movie-poster-placeholder"><span>No Poster</span></div>';
                         }
                       }}
                     />
@@ -2284,31 +2847,59 @@ function App() {
 
                   <div className="movie-detail-info">
                     <div className="movie-detail-title-row">
-                      <h1>{selectedMovie.title}</h1>
+                      <h1>{selectedMovie?.title || 'Untitled Movie'}</h1>
                       <div className="movie-detail-actions">
-                        <button
-                          className={`favourite-btn ${favourites.has(Number(selectedMovie.id)) ? "active" : ""}`}
-                          onClick={() => handleFavouriteClick(selectedMovie.id)}
-                          aria-label="Add to favourites"
-                          title="Add to Favourites"
-                        >
-                          {favourites.has(Number(selectedMovie.id)) ? "👑" : "♔"}
-                        </button>
-                        <button
-                          className={`watchlist-btn ${watchlist.has(Number(selectedMovie.id)) ? "active" : ""}`}
-                          onClick={() => handleWatchlistClick(selectedMovie.id)}
-                          aria-label="Add to watchlist"
-                          title="Add to Watchlist"
-                        >
-                          {watchlist.has(Number(selectedMovie.id)) ? "✓" : "+"}
-                        </button>
+                        {selectedMovie?.id && (
+                          <>
+                            <button
+                              className={`favourite-btn ${favourites.has(Number(selectedMovie.id)) ? "active" : ""}`}
+                              onClick={(e) => {
+                                console.log("✅ FAVOURITE BUTTON CLICKED - movieId:", selectedMovie.id);
+                                e.preventDefault();
+                                e.stopPropagation();
+                                if (handleFavouriteClick) {
+                                  handleFavouriteClick(selectedMovie.id);
+                                } else {
+                                  console.error("❌ handleFavouriteClick is undefined!");
+                                }
+                              }}
+                              onMouseDown={() => console.log("✅ FAVOURITE BUTTON MOUSEDOWN")}
+                              aria-label="Add to favourites"
+                              title="Add to Favourites"
+                              type="button"
+                              style={{ pointerEvents: 'auto', cursor: 'pointer' }}
+                            >
+                              {favourites.has(Number(selectedMovie.id)) ? "👑" : "♔"}
+                            </button>
+                            <button
+                              className={`watchlist-btn ${watchlist.has(Number(selectedMovie.id)) ? "active" : ""}`}
+                              onClick={(e) => {
+                                console.log("✅ WATCHLIST BUTTON CLICKED - movieId:", selectedMovie.id);
+                                e.preventDefault();
+                                e.stopPropagation();
+                                if (handleWatchlistClick) {
+                                  handleWatchlistClick(selectedMovie.id);
+                                } else {
+                                  console.error("❌ handleWatchlistClick is undefined!");
+                                }
+                              }}
+                              onMouseDown={() => console.log("✅ WATCHLIST BUTTON MOUSEDOWN")}
+                              aria-label="Add to watchlist"
+                              title="Add to Watchlist"
+                              type="button"
+                              style={{ pointerEvents: 'auto', cursor: 'pointer' }}
+                            >
+                              {watchlist.has(Number(selectedMovie.id)) ? "✓" : "+"}
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
 
                     <div className="movie-detail-meta">
-                      <span className="movie-year">{selectedMovie.year}</span>
-                      <span className="movie-separator">·</span>
-                      <span className="movie-genre">{selectedMovie.genre}</span>
+                      {selectedMovie?.year && <span className="movie-year">{selectedMovie.year}</span>}
+                      {selectedMovie?.year && selectedMovie?.genre && <span className="movie-separator">·</span>}
+                      {selectedMovie?.genre && <span className="movie-genre">{selectedMovie.genre}</span>}
                       {selectedMovie.duration && (
                         <>
                           <span className="movie-separator">·</span>
@@ -2328,7 +2919,7 @@ function App() {
                       </div>
                     )}
 
-                    {movieRatings[selectedMovie.id]?.average && (
+                    {selectedMovie?.id && movieRatings[selectedMovie.id]?.average && (
                       <div className="movie-detail-rating">
                         <span className="rating-label">User Rating</span>
                         <span className="rating-value-large">
@@ -2343,16 +2934,25 @@ function App() {
                       </div>
                     )}
 
-                    {selectedMovie.trailer_url && (
-                      <a
-                        href={selectedMovie.trailer_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="trailer-btn"
+                    <div className="movie-detail-action-buttons">
+                      {selectedMovie.trailer_url && (
+                        <a
+                          href={selectedMovie.trailer_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="trailer-btn"
+                        >
+                          ▶ Watch Trailer
+                        </a>
+                      )}
+                      <button
+                        className="quiz-btn"
+                        onClick={handleTakeQuiz}
+                        disabled={quizLoading}
                       >
-                        ▶ Watch Trailer
-                      </a>
-                    )}
+                        {quizLoading ? "Loading..." : "🎯 Take Quiz"}
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -2364,7 +2964,7 @@ function App() {
                 )}
 
                 {/* Actors Section */}
-                {actors[selectedMovie.id] && actors[selectedMovie.id].length > 0 && (
+                {selectedMovie?.id && actors[selectedMovie.id] && actors[selectedMovie.id].length > 0 && (
                   <div className="movie-actors-section">
                     <h3>Cast</h3>
                     <div className="actors-grid">
@@ -2396,51 +2996,53 @@ function App() {
                   </div>
                 )}
 
-                {actorsLoading[selectedMovie.id] && (
+                {selectedMovie?.id && actorsLoading[selectedMovie.id] && (
                   <div className="movie-actors-section">
                     <h3>Cast</h3>
                     <div className="actors-loading">Loading cast...</div>
                   </div>
                 )}
 
-                <div className="movie-detail-rating-section">
-                  <h3>Your Rating</h3>
-                  <div className="star-row-large">{renderStars(selectedMovie.id)}</div>
-                </div>
-
-                <div className="movie-detail-comments">
-                  <h3>Comments</h3>
-
-                  {isAuthenticated && (
-                    <div className="comment-input-container">
-                      <textarea
-                        className="comment-input"
-                        placeholder="Write a comment..."
-                        value={commentTexts[selectedMovie.id] || ""}
-                        onChange={(e) =>
-                          setCommentTexts((prev) => ({
-                            ...prev,
-                            [selectedMovie.id]: e.target.value,
-                          }))
-                        }
-                        rows={3}
-                      />
-                      <button
-                        className="comment-submit-btn"
-                        onClick={() => handleCommentSubmit(selectedMovie.id)}
-                      >
-                        Post Comment
-                      </button>
+                {selectedMovie?.id && (
+                  <>
+                    <div className="movie-detail-rating-section">
+                      <h3>Your Rating</h3>
+                      <div className="star-row-large">{renderStars(selectedMovie.id)}</div>
                     </div>
-                  )}
 
-                  <div className="comments-list">
-                    {comments[selectedMovie.id]?.length === 0 ? (
-                      <p className="no-comments">No comments yet. Be the first to comment!</p>
-                    ) : (
-                      (comments[selectedMovie.id] || []).map((comment) => {
-                        const isOwnComment = currentUser && comment.user_id === currentUser.id;
-                        const isEditing = editingComment?.movieId === selectedMovie.id && editingComment?.commentId === comment.id;
+                    <div className="movie-detail-comments">
+                      <h3>Comments</h3>
+
+                      {isAuthenticated && (
+                        <div className="comment-input-container">
+                          <textarea
+                            className="comment-input"
+                            placeholder="Write a comment..."
+                            value={commentTexts[selectedMovie.id] || ""}
+                            onChange={(e) =>
+                              setCommentTexts((prev) => ({
+                                ...prev,
+                                [selectedMovie.id]: e.target.value,
+                              }))
+                            }
+                            rows={3}
+                          />
+                          <button
+                            className="comment-submit-btn"
+                            onClick={() => handleCommentSubmit(selectedMovie.id)}
+                          >
+                            Post Comment
+                          </button>
+                        </div>
+                      )}
+
+                      <div className="comments-list">
+                        {comments[selectedMovie.id]?.length === 0 ? (
+                          <p className="no-comments">No comments yet. Be the first to comment!</p>
+                        ) : (
+                          (comments[selectedMovie.id] || []).map((comment) => {
+                            const isOwnComment = currentUser && comment.user_id === currentUser.id;
+                            const isEditing = editingComment?.movieId === selectedMovie.id && editingComment?.commentId === comment.id;
 
                         return (
                           <div key={comment.id} className="comment-item">
@@ -2506,7 +3108,9 @@ function App() {
                       })
                     )}
                   </div>
-                </div>
+                    </div>
+                  </>
+                )}
               </div>
             </section>
           ) : currentPage === "home" ? (
@@ -2535,6 +3139,26 @@ function App() {
                     <button className="secondary-btn" type="button" disabled>
                       Watch tutorial (soon)
                     </button>
+                    {isAuthenticated && isAdmin && (
+                      <a
+                        className="primary-btn"
+                        href="#admin"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setShowAdminPanel(true);
+                          window.location.hash = "#admin";
+                        }}
+                        style={{
+                          background: 'linear-gradient(135deg, #ffd700 0%, #ffed4e 100%)',
+                          color: '#000',
+                          border: '1px solid #ffd700',
+                          fontWeight: 'bold',
+                          boxShadow: '0 4px 15px rgba(255, 215, 0, 0.4)'
+                        }}
+                      >
+                        👑 Admin Panel
+                      </a>
+                    )}
                   </div>
                 </div>
 
@@ -2567,6 +3191,121 @@ function App() {
                 </aside>
               </section>
 
+              {/* Trending Movies Leaderboard */}
+              <section className="trending-leaderboard" id="trending">
+                <div className="trending-header">
+                  <h2>🔥 Trending & Popular</h2>
+                  <p className="trending-subtitle">Vote for Movie of the Month</p>
+                </div>
+                {trendingLoading ? (
+                  <div className="trending-loading">Loading trending movies...</div>
+                ) : trendingMovies.length === 0 ? (
+                  <div className="trending-empty">
+                    <p>No movies in trending list yet. Be the first to add one!</p>
+                    {isAuthenticated && (
+                      <button 
+                        className="trending-add-btn"
+                        onClick={() => setShowAddMovieModal(true)}
+                      >
+                        + Add Movie
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <div className="trending-list">
+                      {trendingMovies.map((movie, index) => (
+                        <div key={movie.id} className={`trending-movie-card ${index === 0 ? 'rank-1' : index === 1 ? 'rank-2' : index === 2 ? 'rank-3' : ''}`}>
+                          <div className="trending-rank">
+                            {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index + 1}`}
+                          </div>
+                          <div className="trending-poster">
+                            {movie.posterUrl && movie.posterUrl.trim() !== '' && movie.posterUrl !== 'N/A' ? (
+                              <img
+                                src={movie.posterUrl.startsWith('//') ? `https:${movie.posterUrl}` : movie.posterUrl.startsWith('m.media-amazon.com') ? `https://${movie.posterUrl}` : movie.posterUrl}
+                                alt={movie.title}
+                                onError={(e) => { 
+                                  e.target.style.display = 'none'; 
+                                  const placeholder = e.target.nextElementSibling;
+                                  if (!placeholder || !placeholder.classList.contains('trending-poster-placeholder')) {
+                                    const div = document.createElement('div');
+                                    div.className = 'trending-poster-placeholder';
+                                    div.innerHTML = '<span>🎬</span>';
+                                    e.target.parentElement.appendChild(div);
+                                  }
+                                }}
+                              />
+                            ) : null}
+                            {(!movie.posterUrl || movie.posterUrl.trim() === '' || movie.posterUrl === 'N/A') && (
+                              <div className="trending-poster-placeholder">🎬</div>
+                            )}
+                          </div>
+                          <div className="trending-info">
+                            <h3 className="trending-title">{movie.title}</h3>
+                            <div className="trending-votes">
+                              <span className="trending-vote-count">{movie.votes}</span>
+                              <span className="trending-vote-label">{movie.votes === 1 ? 'vote' : 'votes'}</span>
+                            </div>
+                            {isAuthenticated ? (
+                              <button
+                                className={`trending-vote-btn ${movie.hasVoted ? 'voted' : ''}`}
+                                onClick={() => handleTrendingVote(movie.id)}
+                                disabled={movie.hasVoted}
+                              >
+                                {movie.hasVoted ? '✓ Voted' : '🗳️ Vote'}
+                              </button>
+                            ) : (
+                              <p className="trending-login-prompt">Sign in to vote</p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {isAuthenticated && (
+                      <div className="trending-add-section">
+                        <button 
+                          className="trending-add-btn"
+                          onClick={() => setShowAddMovieModal(true)}
+                        >
+                          + Add New Movie
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </section>
+
+              {/* Personalized Recommendations Section - Only shown when user is logged in */}
+              {isAuthenticated && currentUser && (
+                <section className="recommendations-section" id="recommendations">
+                  <div className="rating-top">
+                    <div>
+                      <p className="section-label">Personalized</p>
+                      <h2>You Might Like…</h2>
+                      <p>
+                        Discover movies tailored to your taste based on your ratings, watchlist, and favorites.
+                      </p>
+                    </div>
+                  </div>
+
+                  {recommendationsLoading ? (
+                    <div className="loading" style={{ textAlign: "center", padding: "2rem", color: "var(--text-tertiary)" }}>
+                      Loading recommendations...
+                    </div>
+                  ) : recommendedMovies.length === 0 ? (
+                    <div style={{ textAlign: "center", padding: "2rem", color: "var(--text-tertiary)" }}>
+                      <p>Start rating movies and adding to your watchlist to get personalized recommendations!</p>
+                    </div>
+                  ) : (
+                    <HorizontalCarousel
+                      movies={recommendedMovies}
+                      onMovieClick={handleMovieClick}
+                      loading={false}
+                    />
+                  )}
+                </section>
+              )}
+
               {/* Top Rated Movies Section - Horizontal Scroll */}
               <section className="top-rated-section" id="top-rated">
                 <div className="rating-top">
@@ -2582,7 +3321,7 @@ function App() {
                 <HorizontalCarousel
                   movies={topRatedMovies}
                   onMovieClick={handleMovieClick}
-                  loading={topRatedMovies.length === 0}
+                  loading={topRatedLoading}
                 />
               </section>
             </>
@@ -2890,13 +3629,8 @@ function App() {
                                   onError={(e) => {
                                     // Replace broken snack image with placeholder
                                     const shortName = snack.name.length > 10 ? snack.name.substring(0, 10) : snack.name;
-                                    const placeholderUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(shortName)}&size=200&background=1a1a2e&color=9ec9ff&bold=true`;
-                                    if (e.target.src !== placeholderUrl) {
-                                      e.target.src = placeholderUrl;
-                                      e.target.onerror = null;
-                                    } else {
-                                      e.target.style.display = "none";
-                                    }
+                                    // If profile picture fails, hide it
+                                    e.target.style.display = "none";
                                   }}
                                 />
                               ) : (
@@ -3245,27 +3979,15 @@ function App() {
             </>
           ) : currentPage === "ratings" ? (
             <section className="rating-area" id="ratings">
-                  <div className="rating-top">
-                    <div>
-                      <p className="section-label">Fresh Picks</p>
-                      <h2>Rate today&apos;s featured movies</h2>
-                      <p>
-                        Search is coming soon. For now, sample a few cinematic bites
-                        and color the stars with your taste.
-                      </p>
+                    <div className="rating-top">
+                      <div>
+                        <p className="section-label">Fresh Picks</p>
+                        <h2>Rate today&apos;s featured movies</h2>
+                        <p>
+                          Sample a few cinematic bites and color the stars with your taste.
+                        </p>
+                      </div>
                     </div>
-
-                    <div className="search-bar">
-                      <input
-                        type="search"
-                        placeholder="Search movies..."
-                        value={searchTerm}
-                        onChange={(event) => setSearchTerm(event.target.value)}
-                        disabled
-                      />
-                      <button disabled>Search</button>
-                    </div>
-                  </div>
 
                   {/* Horizontal Scrolling Movie Carousel */}
                   {moviesLoading ? (
@@ -3273,11 +3995,21 @@ function App() {
                       Loading movies from database...
                     </p>
                   ) : filteredMovies.length === 0 ? (
-                    <p style={{ textAlign: "center", color: "#ff8f8f", padding: "2rem" }}>
-                      {movies.length === 0
-                        ? "No movies found. Make sure the backend is running and database is initialized."
-                        : "No movies match your filters. Try adjusting your filter criteria."}
-                    </p>
+                    <div style={{ textAlign: "center", color: "#ff8f8f", padding: "2rem" }}>
+                      {movies.length === 0 ? (
+                        <div>
+                          <p style={{ marginBottom: "1rem" }}>No movies found.</p>
+                          <p style={{ fontSize: "0.9rem", opacity: 0.8, marginBottom: "0.5rem" }}>
+                            The backend server is starting... Please wait a few seconds and refresh the page.
+                          </p>
+                          <p style={{ fontSize: "0.85rem", opacity: 0.7, marginTop: "1rem" }}>
+                            If this persists, check that the backend is running on port 4000.
+                          </p>
+                        </div>
+                      ) : (
+                        <p>No movies match your filters. Try adjusting your filter criteria.</p>
+                      )}
+                    </div>
                   ) : (
                     <HorizontalMovieCarousel
                       movies={filteredMovies}
@@ -3370,9 +4102,295 @@ function App() {
                 />
               )}
             </section>
+          ) : currentPage === "battle" ? (
+            <section className="battle-area">
+              <div className="battle-header">
+                <div className="rating-top">
+                  <div>
+                    <p className="section-label">Daily Competition</p>
+                    <h1>Movie Battle of the Day</h1>
+                    <p>
+                      Vote for which movie you think is better! Results update in real-time.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {battleLoading ? (
+                <div className="battle-loading">
+                  <p>Loading today's battle...</p>
+                </div>
+              ) : !battle ? (
+                <div className="battle-error">
+                  <p>Unable to load battle. Please try again later.</p>
+                </div>
+              ) : (
+                <>
+                  <div className="battle-container">
+                    <div className="battle-movies">
+                      {/* Movie 1 */}
+                      <div className={`battle-movie-card ${hasVoted && battle.movie1Votes > battle.movie2Votes ? 'winner' : ''}`}>
+                        <div className="battle-poster-container">
+                          {battle.movie1.poster_url && battle.movie1.poster_url.trim() !== '' && battle.movie1.poster_url !== 'N/A' && (battle.movie1.poster_url.startsWith('http') || battle.movie1.poster_url.startsWith('//') || battle.movie1.poster_url.startsWith('m.media-amazon.com')) ? (
+                            <img
+                              src={battle.movie1.poster_url.startsWith('//') ? `https:${battle.movie1.poster_url}` : battle.movie1.poster_url.startsWith('m.media-amazon.com') ? `https://${battle.movie1.poster_url}` : battle.movie1.poster_url}
+                              alt={battle.movie1.title}
+                              className="battle-poster"
+                              onError={(e) => {
+                                const container = e.target.parentElement;
+                                if (container && e.target.tagName === 'IMG') {
+                                  container.innerHTML = '<div class="battle-poster-placeholder"><span>🎬</span></div>';
+                                }
+                              }}
+                            />
+                          ) : (
+                            <div className="battle-poster-placeholder">
+                              <span>🎬</span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="battle-movie-info">
+                          <h2 className="battle-movie-title">{battle.movie1.title}</h2>
+                          <p className="battle-movie-meta">
+                            {battle.movie1.year} • {battle.movie1.genre}
+                            {battle.movie1.imdb_rating && ` • ⭐ ${battle.movie1.imdb_rating}/10`}
+                          </p>
+                          {movie1Stats && (
+                            <div className="battle-movie-stats">
+                              <span>Wins: {movie1Stats.battlesWon}</span>
+                              <span>Win Rate: {movie1Stats.winPercentage}%</span>
+                            </div>
+                          )}
+                          {!hasVoted ? (
+                            <button
+                              className="battle-vote-btn"
+                              onClick={() => handleBattleVote(battle.movie1.id)}
+                            >
+                              Vote for This Movie
+                            </button>
+                          ) : (
+                            <div className="battle-voted-indicator">
+                              {battle.movie1Votes > battle.movie2Votes ? '🏆 Winner!' : 'Voted'}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* VS Divider */}
+                      <div className="battle-vs">
+                        <span>VS</span>
+                      </div>
+
+                      {/* Movie 2 */}
+                      <div className={`battle-movie-card ${hasVoted && battle.movie2Votes > battle.movie1Votes ? 'winner' : ''}`}>
+                        <div className="battle-poster-container">
+                          {battle.movie2.poster_url && battle.movie2.poster_url.trim() !== '' && battle.movie2.poster_url !== 'N/A' && (battle.movie2.poster_url.startsWith('http') || battle.movie2.poster_url.startsWith('//') || battle.movie2.poster_url.startsWith('m.media-amazon.com')) ? (
+                            <img
+                              src={battle.movie2.poster_url.startsWith('//') ? `https:${battle.movie2.poster_url}` : battle.movie2.poster_url.startsWith('m.media-amazon.com') ? `https://${battle.movie2.poster_url}` : battle.movie2.poster_url}
+                              alt={battle.movie2.title}
+                              className="battle-poster"
+                              onError={(e) => {
+                                const container = e.target.parentElement;
+                                if (container && e.target.tagName === 'IMG') {
+                                  container.innerHTML = '<div class="battle-poster-placeholder"><span>🎬</span></div>';
+                                }
+                              }}
+                            />
+                          ) : (
+                            <div className="battle-poster-placeholder">
+                              <span>🎬</span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="battle-movie-info">
+                          <h2 className="battle-movie-title">{battle.movie2.title}</h2>
+                          <p className="battle-movie-meta">
+                            {battle.movie2.year} • {battle.movie2.genre}
+                            {battle.movie2.imdb_rating && ` • ⭐ ${battle.movie2.imdb_rating}/10`}
+                          </p>
+                          {movie2Stats && (
+                            <div className="battle-movie-stats">
+                              <span>Wins: {movie2Stats.battlesWon}</span>
+                              <span>Win Rate: {movie2Stats.winPercentage}%</span>
+                            </div>
+                          )}
+                          {!hasVoted ? (
+                            <button
+                              className="battle-vote-btn"
+                              onClick={() => handleBattleVote(battle.movie2.id)}
+                            >
+                              Vote for This Movie
+                            </button>
+                          ) : (
+                            <div className="battle-voted-indicator">
+                              {battle.movie2Votes > battle.movie1Votes ? '🏆 Winner!' : 'Voted'}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Results Display */}
+                    {hasVoted && (
+                      <div className="battle-results">
+                        <h3>Live Results</h3>
+                        <div className="battle-results-bars">
+                          <div className="battle-result-bar">
+                            <div className="battle-result-label">
+                              <span>{battle.movie1.title}</span>
+                              <span className="battle-result-percentage">
+                                {battle.movie1Votes + battle.movie2Votes > 0
+                                  ? Math.round((battle.movie1Votes / (battle.movie1Votes + battle.movie2Votes)) * 100)
+                                  : 0}%
+                              </span>
+                            </div>
+                            <div className="battle-progress-bar">
+                              <div
+                                className="battle-progress-fill"
+                                style={{
+                                  width: battle.movie1Votes + battle.movie2Votes > 0
+                                    ? `${(battle.movie1Votes / (battle.movie1Votes + battle.movie2Votes)) * 100}%`
+                                    : '0%',
+                                }}
+                              />
+                            </div>
+                            <span className="battle-vote-count">{battle.movie1Votes} votes</span>
+                          </div>
+                          <div className="battle-result-bar">
+                            <div className="battle-result-label">
+                              <span>{battle.movie2.title}</span>
+                              <span className="battle-result-percentage">
+                                {battle.movie1Votes + battle.movie2Votes > 0
+                                  ? Math.round((battle.movie2Votes / (battle.movie1Votes + battle.movie2Votes)) * 100)
+                                  : 0}%
+                              </span>
+                            </div>
+                            <div className="battle-progress-bar">
+                              <div
+                                className="battle-progress-fill"
+                                style={{
+                                  width: battle.movie1Votes + battle.movie2Votes > 0
+                                    ? `${(battle.movie2Votes / (battle.movie1Votes + battle.movie2Votes)) * 100}%`
+                                    : '0%',
+                                }}
+                              />
+                            </div>
+                            <span className="battle-vote-count">{battle.movie2Votes} votes</span>
+                          </div>
+                        </div>
+                        <p className="battle-total-votes">
+                          Total Votes: {battle.movie1Votes + battle.movie2Votes}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Statistics Section */}
+                  <div className="battle-stats-section">
+                    <div className="battle-stat-card">
+                      <h3>Yesterday's Winner</h3>
+                      {yesterdayWinner ? (
+                        <div className="battle-stat-movie">
+                          <div className="battle-stat-poster">
+                            {yesterdayWinner.poster_url && yesterdayWinner.poster_url.trim() !== '' && yesterdayWinner.poster_url !== 'N/A' ? (
+                              <img
+                                src={yesterdayWinner.poster_url.startsWith('//') ? `https:${yesterdayWinner.poster_url}` : yesterdayWinner.poster_url.startsWith('m.media-amazon.com') ? `https://${yesterdayWinner.poster_url}` : yesterdayWinner.poster_url}
+                                alt={yesterdayWinner.title}
+                                onError={(e) => { e.target.style.display = 'none'; }}
+                              />
+                            ) : (
+                              <div className="battle-stat-placeholder">🎬</div>
+                            )}
+                          </div>
+                          <div className="battle-stat-info">
+                            <h4>{yesterdayWinner.title}</h4>
+                            <p>{yesterdayWinner.votesReceived} votes ({Math.round((yesterdayWinner.votesReceived / yesterdayWinner.totalVotes) * 100)}%)</p>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="battle-stat-empty">No winner data available</p>
+                      )}
+                    </div>
+
+                    <div className="battle-stat-card">
+                      <h3>Monthly Leader</h3>
+                      {monthlyLeader ? (
+                        <div className="battle-stat-movie">
+                          <div className="battle-stat-poster">
+                            {monthlyLeader.poster_url && monthlyLeader.poster_url.trim() !== '' && monthlyLeader.poster_url !== 'N/A' ? (
+                              <img
+                                src={monthlyLeader.poster_url.startsWith('//') ? `https:${monthlyLeader.poster_url}` : monthlyLeader.poster_url.startsWith('m.media-amazon.com') ? `https://${monthlyLeader.poster_url}` : monthlyLeader.poster_url}
+                                alt={monthlyLeader.title}
+                                onError={(e) => { e.target.style.display = 'none'; }}
+                              />
+                            ) : (
+                              <div className="battle-stat-placeholder">🎬</div>
+                            )}
+                          </div>
+                          <div className="battle-stat-info">
+                            <h4>{monthlyLeader.title}</h4>
+                            <p>🏆 {monthlyLeader.winsThisMonth} wins this month</p>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="battle-stat-empty">No leader data available</p>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </section>
           ) : null}
         </main>
       </div>
+
+      {/* Battle Popup Modal */}
+      {showBattlePopup && (
+        <div className="battle-popup-overlay" onClick={handleDismissBattlePopup}>
+          <div className="battle-popup" onClick={(e) => e.stopPropagation()}>
+            <button className="battle-popup-close" onClick={handleDismissBattlePopup}>×</button>
+            <h2>⚔️ Movie Battle of the Day!</h2>
+            <p>Two movies are competing today. Vote for your favorite and see which one wins!</p>
+            <div className="battle-popup-actions">
+              <button className="battle-popup-btn primary" onClick={handleBattlePageClick}>
+                Go to Battle
+              </button>
+              <button className="battle-popup-btn secondary" onClick={handleDismissBattlePopup}>
+                Maybe Later
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Movie Modal */}
+      {showAddMovieModal && (
+        <div className="trending-modal-overlay" onClick={() => setShowAddMovieModal(false)}>
+          <div className="trending-modal" onClick={(e) => e.stopPropagation()}>
+            <button className="trending-modal-close" onClick={() => setShowAddMovieModal(false)}>×</button>
+            <h2>Add Movie to Trending</h2>
+            <p>Add a movie to the trending voting list</p>
+            <div className="trending-modal-form">
+              <input
+                type="text"
+                className="trending-modal-input"
+                placeholder="Enter movie title"
+                value={newMovieTitle}
+                onChange={(e) => setNewMovieTitle(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleAddTrendingMovie()}
+              />
+              <div className="trending-modal-actions">
+                <button className="trending-modal-btn primary" onClick={handleAddTrendingMovie}>
+                  Add Movie
+                </button>
+                <button className="trending-modal-btn secondary" onClick={() => setShowAddMovieModal(false)}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Floating Action Button */}
       {isAuthenticated && (
@@ -3418,20 +4436,39 @@ function App() {
               <span className="fab-label">Ratings</span>
             </button>
 
-            {/* Soon to be Released Action */}
-            <button
-              className="fab-action-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                setFabOpen(false);
-                handleNewlyReleasedPageClick(e);
-              }}
-              title="Soon to be Released"
-              aria-label="Go to Soon to be Released page"
-            >
-              <span className="fab-icon">🎬</span>
-              <span className="fab-label">Soon to be Released</span>
-            </button>
+            {/* Watchlist Action - Only visible when authenticated */}
+            {isAuthenticated && currentUser && (
+              <button
+                className="fab-action-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setFabOpen(false);
+                  handleWatchlistPageClick(e);
+                }}
+                title="Go to Watchlist"
+                aria-label="Go to Watchlist page"
+              >
+                <span className="fab-icon">📋</span>
+                <span className="fab-label">Watchlist</span>
+              </button>
+            )}
+
+            {/* Favorites Action - Only visible when authenticated */}
+            {isAuthenticated && currentUser && (
+              <button
+                className="fab-action-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setFabOpen(false);
+                  handleFavoritesPageClick(e);
+                }}
+                title="Go to Favorites"
+                aria-label="Go to Favorites page"
+              >
+                <span className="fab-icon">❤️</span>
+                <span className="fab-label">Favorites</span>
+              </button>
+            )}
 
             {/* Edit/Profile Action */}
             {isAuthenticated && currentUser && (
@@ -3449,6 +4486,56 @@ function App() {
                 <span className="fab-label">Edit</span>
               </button>
             )}
+
+            {/* Admin Panel Action - Only visible to admins */}
+            {isAuthenticated && currentUser && isAdmin && (
+              <button
+                className="fab-action-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setFabOpen(false);
+                  setShowAdminPanel(true);
+                  window.location.hash = "#admin";
+                }}
+                title="Admin Panel"
+                aria-label="Open Admin Panel"
+                style={{ background: 'rgba(255, 215, 0, 0.2)', border: '1px solid #ffd700' }}
+              >
+                <span className="fab-icon">👑</span>
+                <span className="fab-label">Admin</span>
+              </button>
+            )}
+
+            {/* Movie Battle Action */}
+            <button
+              className="fab-action-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                setFabOpen(false);
+                handleBattlePageClick();
+              }}
+              title="Movie Battle"
+              aria-label="Go to Movie Battle"
+              style={{ background: 'rgba(255, 87, 34, 0.2)', border: '1px solid #ff5722' }}
+            >
+              <span className="fab-icon">⚔️</span>
+              <span className="fab-label">Battle</span>
+            </button>
+
+            {/* Soon to be Released Action */}
+            <button
+              className="fab-action-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                setFabOpen(false);
+                handleNewlyReleasedPageClick(e);
+              }}
+              title="Soon to be Released"
+              aria-label="Go to Soon to be Released page"
+            >
+              <span className="fab-icon">🎬</span>
+              <span className="fab-label">Soon to be Released</span>
+            </button>
 
             {/* Light/Dark Mode Toggle */}
             <button

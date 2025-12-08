@@ -1,12 +1,40 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const multer = require("multer");
 const { query } = require("./db");
 const { updateMovieRating, updateAllMovieRatings, getDailyRequestCount } = require("./imdbService");
 const { updateMoviePoster, updateAllMoviePosters } = require("./posterService");
 const { fetchMovieActors } = require("./actorService");
 const { startScheduler } = require("./scheduler");
 const { fetchNowPlayingMovies, fetchUpcomingMovies, getMovieDetails } = require("./tmdbService");
+const { uploadToCloudinary, deleteFromCloudinary, testCloudinaryConnection } = require("./cloudinaryService");
+const { requireAdmin, logAdminAction, isAdmin } = require("./adminMiddleware");
+const { checkProfanity, filterProfanity, checkAndFilter } = require("./profanityFilter");
+const { getCachedRecommendations } = require("./recommendationService");
+const {
+  getQuizQuestions,
+  createOrUpdateQuiz,
+  submitQuizResult,
+  getUserQuizResults,
+  getMovieQuizStats,
+} = require("./quizService");
+const {
+  getOrCreateDailyBattle,
+  submitVote,
+  hasUserVoted,
+  getYesterdayWinner,
+  getMonthlyLeader,
+  getMovieBattleStats,
+  getBattleLeaderboard,
+} = require("./battleService");
+const {
+  getTrendingMovies,
+  getAllTrendingMovies,
+  submitVote: submitTrendingVote,
+  addTrendingMovie,
+  getUserVotingStatus,
+} = require("./trendingService");
 
 // Log TMDB API key status on server start (for debugging)
 const tmdbKey = process.env.TMDB_API_KEY;
@@ -19,6 +47,21 @@ if (!tmdbKey || tmdbKey === "MY_KEY_HERE" || tmdbKey === "my_real_key" || tmdbKe
 } else {
   console.log(`✅ TMDB_API_KEY is configured (${tmdbKey.substring(0, 8)}...${tmdbKey.substring(tmdbKey.length - 4)})`);
 }
+
+// Test Cloudinary connection on server start
+(async () => {
+  try {
+    const isConnected = await testCloudinaryConnection();
+    if (isConnected) {
+      console.log("✅ Cloudinary connection successful");
+    } else {
+      console.warn("⚠️  WARNING: Cloudinary connection test failed!");
+      console.warn("   Please check your CLOUDINARY_URL or CLOUDINARY credentials in .env file");
+    }
+  } catch (error) {
+    console.warn("⚠️  WARNING: Could not test Cloudinary connection:", error.message);
+  }
+})();
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -37,6 +80,23 @@ app.use(
   })
 );
 app.use(express.json());
+
+// Configure multer for file uploads (store in memory for Cloudinary)
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    // Accept images and videos
+    if (file.mimetype.startsWith("image/") || file.mimetype.startsWith("video/")) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only image and video files are allowed"), false);
+    }
+  },
+});
 
 // Health check endpoint
 app.get("/api/health", async (req, res) => {
@@ -656,11 +716,28 @@ app.post("/api/comments", async (req, res) => {
       return res.status(400).json({ error: "User ID and Movie ID must be valid numbers." });
     }
 
+    // Check for profanity
+    const trimmedText = commentText.trim();
+    const profanityCheck = checkAndFilter(trimmedText);
+    const displayText = profanityCheck.containsProfanity 
+      ? profanityCheck.filteredText 
+      : trimmedText;
+
+    // Insert comment with original text and flag if profanity detected
     const result = await query(
-      `INSERT INTO comments (user_id, movie_id, comment_text) 
-       VALUES ($1, $2, $3) 
-       RETURNING id, user_id, movie_id, comment_text, created_at, updated_at`,
-      [userIdNum, movieIdNum, commentText.trim()]
+      `INSERT INTO comments (user_id, movie_id, comment_text, original_text, is_flagged, flagged_reason) 
+       VALUES ($1, $2, $3, $4, $5, $6) 
+       RETURNING id, user_id, movie_id, comment_text, created_at, updated_at, is_flagged`,
+      [
+        userIdNum, 
+        movieIdNum, 
+        displayText, // Display filtered text
+        profanityCheck.originalText, // Store original
+        profanityCheck.containsProfanity,
+        profanityCheck.containsProfanity 
+          ? `Flagged words: ${profanityCheck.flaggedWords.join(", ")}` 
+          : null
+      ]
     );
 
     // Get username for the response
@@ -807,7 +884,9 @@ app.get("/api/users/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
     const result = await query(
-      `SELECT id, username, email, profile_picture_url, theme_preference, created_at 
+      `SELECT id, username, email, profile_picture_url, theme_preference, created_at, 
+       COALESCE(is_admin, false) as is_admin, 
+       COALESCE(is_banned, false) as is_banned
        FROM users 
        WHERE id = $1`,
       [userId]
@@ -1460,6 +1539,1126 @@ app.get("/api/bookings/user/:userId", async (req, res) => {
   }
 });
 
+// ==================== Cloudinary Upload Endpoints ====================
+
+// POST /api/upload - Upload a single file to Cloudinary
+app.post("/api/upload", upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file provided" });
+    }
+
+    const { folder, public_id } = req.body || {};
+    const uploadOptions = {
+      folder: folder || "lecture-project",
+      public_id: public_id || undefined,
+    };
+
+    // Convert buffer to data URI for Cloudinary
+    const dataUri = `data:${req.file.mimetype};base64,${req.file.buffer.toString("base64")}`;
+    
+    const result = await uploadToCloudinary(dataUri, uploadOptions);
+
+    res.status(200).json({
+      success: true,
+      message: "File uploaded successfully",
+      data: result,
+    });
+  } catch (error) {
+    console.error("Error uploading file:", error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message || "Failed to upload file" 
+    });
+  }
+});
+
+// POST /api/upload/multiple - Upload multiple files to Cloudinary
+app.post("/api/upload/multiple", upload.array("files", 10), async (req, res) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: "No files provided" });
+    }
+
+    const { folder } = req.body || {};
+    const uploadOptions = {
+      folder: folder || "lecture-project",
+    };
+
+    const uploadPromises = req.files.map((file) => {
+      const dataUri = `data:${file.mimetype};base64,${file.buffer.toString("base64")}`;
+      return uploadToCloudinary(dataUri, uploadOptions);
+    });
+
+    const results = await Promise.all(uploadPromises);
+
+    res.status(200).json({
+      success: true,
+      message: `${results.length} file(s) uploaded successfully`,
+      data: results,
+    });
+  } catch (error) {
+    console.error("Error uploading files:", error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message || "Failed to upload files" 
+    });
+  }
+});
+
+// DELETE /api/upload/:publicId - Delete a file from Cloudinary
+app.delete("/api/upload/:publicId", async (req, res) => {
+  try {
+    const { publicId } = req.params;
+    const { resourceType } = req.query || {};
+
+    if (!publicId) {
+      return res.status(400).json({ error: "Public ID is required" });
+    }
+
+    const result = await deleteFromCloudinary(publicId, resourceType || "image");
+
+    if (result.success) {
+      res.status(200).json({
+        success: true,
+        message: "File deleted successfully",
+        data: result,
+      });
+    } else {
+      res.status(404).json({
+        success: false,
+        message: "File not found or already deleted",
+        data: result,
+      });
+    }
+  } catch (error) {
+    console.error("Error deleting file:", error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message || "Failed to delete file" 
+    });
+  }
+});
+
+// GET /api/upload/test - Test Cloudinary connection
+app.get("/api/upload/test", async (req, res) => {
+  try {
+    const isConnected = await testCloudinaryConnection();
+    
+    if (isConnected) {
+      res.status(200).json({
+        success: true,
+        message: "Cloudinary connection successful",
+        connected: true,
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: "Cloudinary connection failed",
+        connected: false,
+      });
+    }
+  } catch (error) {
+    console.error("Error testing Cloudinary connection:", error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message || "Failed to test Cloudinary connection" 
+    });
+  }
+});
+
+// ==================== ADMIN ENDPOINTS ====================
+
+// ========== Movie Management ==========
+
+// POST /api/admin/movies - Create a new movie (with Cloudinary upload)
+app.post("/api/admin/movies", requireAdmin, upload.fields([{ name: "poster", maxCount: 1 }, { name: "trailer", maxCount: 1 }]), async (req, res) => {
+  try {
+    const { title, year, genre, description, duration, userId } = req.body;
+    const adminId = parseInt(userId, 10);
+
+    if (!title || !year || !genre) {
+      return res.status(400).json({ error: "Title, year, and genre are required" });
+    }
+
+    let posterUrl = null;
+    let trailerUrl = null;
+
+    // Upload poster if provided
+    if (req.files && req.files.poster && req.files.poster[0]) {
+      const posterFile = req.files.poster[0];
+      const dataUri = `data:${posterFile.mimetype};base64,${posterFile.buffer.toString("base64")}`;
+      const uploadResult = await uploadToCloudinary(dataUri, { folder: "movie-posters" });
+      posterUrl = uploadResult.url;
+    }
+
+    // Upload trailer if provided
+    if (req.files && req.files.trailer && req.files.trailer[0]) {
+      const trailerFile = req.files.trailer[0];
+      const dataUri = `data:${trailerFile.mimetype};base64,${trailerFile.buffer.toString("base64")}`;
+      const uploadResult = await uploadToCloudinary(dataUri, { folder: "movie-trailers", resource_type: "video" });
+      trailerUrl = uploadResult.url;
+    }
+
+    const result = await query(
+      `INSERT INTO movies (title, year, genre, description, duration, poster_url, trailer_url)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING *`,
+      [title, parseInt(year), genre, description || null, duration ? parseInt(duration) : null, posterUrl, trailerUrl]
+    );
+
+    await logAdminAction(adminId, "CREATE_MOVIE", "movie", result.rows[0].id, `Created movie: ${title}`);
+
+    res.status(201).json({
+      success: true,
+      movie: result.rows[0],
+      message: "Movie created successfully",
+    });
+  } catch (error) {
+    console.error("Error creating movie:", error);
+    res.status(500).json({ error: "Failed to create movie" });
+  }
+});
+
+// PUT /api/admin/movies/:id - Update a movie
+app.put("/api/admin/movies/:id", requireAdmin, upload.fields([{ name: "poster", maxCount: 1 }, { name: "trailer", maxCount: 1 }]), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, year, genre, description, duration, userId, poster_url, trailer_url } = req.body;
+    const adminId = parseInt(userId, 10);
+
+    const updates = [];
+    const values = [];
+    let paramCount = 1;
+
+    if (title) { updates.push(`title = $${paramCount++}`); values.push(title); }
+    if (year) { updates.push(`year = $${paramCount++}`); values.push(parseInt(year)); }
+    if (genre) { updates.push(`genre = $${paramCount++}`); values.push(genre); }
+    if (description !== undefined) { updates.push(`description = $${paramCount++}`); values.push(description); }
+    if (duration !== undefined) { updates.push(`duration = $${paramCount++}`); values.push(duration ? parseInt(duration) : null); }
+
+    // Handle poster upload
+    if (req.files && req.files.poster && req.files.poster[0]) {
+      const posterFile = req.files.poster[0];
+      const dataUri = `data:${posterFile.mimetype};base64,${posterFile.buffer.toString("base64")}`;
+      const uploadResult = await uploadToCloudinary(dataUri, { folder: "movie-posters" });
+      updates.push(`poster_url = $${paramCount++}`);
+      values.push(uploadResult.url);
+    } else if (poster_url !== undefined) {
+      updates.push(`poster_url = $${paramCount++}`);
+      values.push(poster_url);
+    }
+
+    // Handle trailer upload
+    if (req.files && req.files.trailer && req.files.trailer[0]) {
+      const trailerFile = req.files.trailer[0];
+      const dataUri = `data:${trailerFile.mimetype};base64,${trailerFile.buffer.toString("base64")}`;
+      const uploadResult = await uploadToCloudinary(dataUri, { folder: "movie-trailers", resource_type: "video" });
+      updates.push(`trailer_url = $${paramCount++}`);
+      values.push(uploadResult.url);
+    } else if (trailer_url !== undefined) {
+      updates.push(`trailer_url = $${paramCount++}`);
+      values.push(trailer_url);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: "No fields to update" });
+    }
+
+    updates.push(`updated_at = CURRENT_TIMESTAMP`);
+    values.push(id);
+
+    const result = await query(
+      `UPDATE movies SET ${updates.join(", ")} WHERE id = $${paramCount} RETURNING *`,
+      values
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Movie not found" });
+    }
+
+    await logAdminAction(adminId, "UPDATE_MOVIE", "movie", parseInt(id), `Updated movie: ${result.rows[0].title}`);
+
+    res.json({
+      success: true,
+      movie: result.rows[0],
+      message: "Movie updated successfully",
+    });
+  } catch (error) {
+    console.error("Error updating movie:", error);
+    res.status(500).json({ error: "Failed to update movie" });
+  }
+});
+
+// DELETE /api/admin/movies/:id - Delete a movie
+app.delete("/api/admin/movies/:id", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userId } = req.body;
+    const adminId = parseInt(userId, 10);
+
+    // Get movie info for logging
+    const movieResult = await query("SELECT title FROM movies WHERE id = $1", [id]);
+    if (movieResult.rows.length === 0) {
+      return res.status(404).json({ error: "Movie not found" });
+    }
+
+    await query("DELETE FROM movies WHERE id = $1", [id]);
+    await logAdminAction(adminId, "DELETE_MOVIE", "movie", parseInt(id), `Deleted movie: ${movieResult.rows[0].title}`);
+
+    res.json({
+      success: true,
+      message: "Movie deleted successfully",
+    });
+  } catch (error) {
+    console.error("Error deleting movie:", error);
+    res.status(500).json({ error: "Failed to delete movie" });
+  }
+});
+
+// ========== Ticket/Showing Management ==========
+
+// GET /api/admin/showings - Get all showings with movie info
+app.get("/api/admin/showings", requireAdmin, async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT s.*, m.title as movie_title, m.poster_url, m.genre,
+       (SELECT COUNT(*) FROM seats WHERE showing_id = s.id AND is_reserved = true) as reserved_seats,
+       (SELECT COUNT(*) FROM seats WHERE showing_id = s.id) as total_seats
+       FROM showings s
+       JOIN movies m ON s.movie_id = m.id
+       ORDER BY s.showtime DESC`
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Error fetching showings:", error);
+    res.status(500).json({ error: "Failed to fetch showings" });
+  }
+});
+
+// POST /api/admin/showings - Create a new showing
+app.post("/api/admin/showings", requireAdmin, async (req, res) => {
+  try {
+    const { movieId, showtime, theaterName, totalSeats, userId } = req.body;
+    const adminId = parseInt(userId, 10);
+
+    if (!movieId || !showtime) {
+      return res.status(400).json({ error: "Movie ID and showtime are required" });
+    }
+
+    const result = await query(
+      `INSERT INTO showings (movie_id, showtime, theater_name, total_seats)
+       VALUES ($1, $2, $3, $4)
+       RETURNING *`,
+      [movieId, showtime, theaterName || "Main Theater", totalSeats || 80]
+    );
+
+    await logAdminAction(adminId, "CREATE_SHOWING", "showing", result.rows[0].id, `Created showing for movie ${movieId}`);
+
+    res.status(201).json({
+      success: true,
+      showing: result.rows[0],
+    });
+  } catch (error) {
+    console.error("Error creating showing:", error);
+    res.status(500).json({ error: "Failed to create showing" });
+  }
+});
+
+// PUT /api/admin/showings/:id - Update a showing
+app.put("/api/admin/showings/:id", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { showtime, theaterName, totalSeats, userId } = req.body;
+    const adminId = parseInt(userId, 10);
+
+    const updates = [];
+    const values = [];
+    let paramCount = 1;
+
+    if (showtime) { updates.push(`showtime = $${paramCount++}`); values.push(showtime); }
+    if (theaterName) { updates.push(`theater_name = $${paramCount++}`); values.push(theaterName); }
+    if (totalSeats) { updates.push(`total_seats = $${paramCount++}`); values.push(parseInt(totalSeats)); }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: "No fields to update" });
+    }
+
+    values.push(id);
+    const result = await query(
+      `UPDATE showings SET ${updates.join(", ")} WHERE id = $${paramCount} RETURNING *`,
+      values
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Showing not found" });
+    }
+
+    await logAdminAction(adminId, "UPDATE_SHOWING", "showing", parseInt(id), `Updated showing ${id}`);
+
+    res.json({
+      success: true,
+      showing: result.rows[0],
+    });
+  } catch (error) {
+    console.error("Error updating showing:", error);
+    res.status(500).json({ error: "Failed to update showing" });
+  }
+});
+
+// DELETE /api/admin/showings/:id - Delete a showing
+app.delete("/api/admin/showings/:id", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userId } = req.body;
+    const adminId = parseInt(userId, 10);
+
+    await query("DELETE FROM showings WHERE id = $1", [id]);
+    await logAdminAction(adminId, "DELETE_SHOWING", "showing", parseInt(id), `Deleted showing ${id}`);
+
+    res.json({
+      success: true,
+      message: "Showing deleted successfully",
+    });
+  } catch (error) {
+    console.error("Error deleting showing:", error);
+    res.status(500).json({ error: "Failed to delete showing" });
+  }
+});
+
+// GET /api/admin/bookings - Get all bookings with details
+app.get("/api/admin/bookings", requireAdmin, async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT b.*, m.title as movie_title, u.username, s.showtime, s.theater_name
+       FROM bookings b
+       JOIN movies m ON b.movie_id = m.id
+       JOIN users u ON b.user_id = u.id
+       JOIN showings s ON b.showing_id = s.id
+       ORDER BY b.booking_date DESC`
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Error fetching bookings:", error);
+    res.status(500).json({ error: "Failed to fetch bookings" });
+  }
+});
+
+// ========== User Management ==========
+
+// GET /api/admin/users - Get all users with activity stats
+app.get("/api/admin/users", requireAdmin, async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT u.*,
+       (SELECT COUNT(*) FROM comments WHERE user_id = u.id) as comment_count,
+       (SELECT COUNT(*) FROM ratings WHERE user_id = u.id) as rating_count,
+       (SELECT COUNT(*) FROM favourites WHERE user_id = u.id) as favourite_count,
+       (SELECT COUNT(*) FROM watchlist WHERE user_id = u.id) as watchlist_count,
+       (SELECT COUNT(*) FROM user_warnings WHERE user_id = u.id) as warning_count
+       FROM users u
+       ORDER BY u.created_at DESC`
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Error fetching users:", error);
+    res.status(500).json({ error: "Failed to fetch users" });
+  }
+});
+
+// GET /api/admin/users/:id/activity - Get user activity details
+app.get("/api/admin/users/:id/activity", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [comments, ratings, favourites, watchlist, warnings] = await Promise.all([
+      query(`SELECT c.*, m.title as movie_title FROM comments c JOIN movies m ON c.movie_id = m.id WHERE c.user_id = $1 ORDER BY c.created_at DESC`, [id]),
+      query(`SELECT r.*, m.title as movie_title FROM ratings r JOIN movies m ON r.movie_id = m.id WHERE r.user_id = $1 ORDER BY r.created_at DESC`, [id]),
+      query(`SELECT f.*, m.title as movie_title FROM favourites f JOIN movies m ON f.movie_id = m.id WHERE f.user_id = $1 ORDER BY f.created_at DESC`, [id]),
+      query(`SELECT w.*, m.title as movie_title FROM watchlist w JOIN movies m ON w.movie_id = m.id WHERE w.user_id = $1 ORDER BY w.created_at DESC`, [id]),
+      query(`SELECT * FROM user_warnings WHERE user_id = $1 ORDER BY created_at DESC`, [id]),
+    ]);
+
+    res.json({
+      comments: comments.rows,
+      ratings: ratings.rows,
+      favourites: favourites.rows,
+      watchlist: watchlist.rows,
+      warnings: warnings.rows,
+    });
+  } catch (error) {
+    console.error("Error fetching user activity:", error);
+    res.status(500).json({ error: "Failed to fetch user activity" });
+  }
+});
+
+// POST /api/admin/users/:id/ban - Ban or unban a user
+app.post("/api/admin/users/:id/ban", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isBanned, banReason, bannedUntil, userId } = req.body;
+    const adminId = parseInt(userId, 10);
+
+    const updates = [];
+    const values = [];
+    let paramCount = 1;
+
+    updates.push(`is_banned = $${paramCount++}`);
+    values.push(isBanned || false);
+
+    if (banReason) {
+      updates.push(`ban_reason = $${paramCount++}`);
+      values.push(banReason);
+    } else {
+      updates.push(`ban_reason = $${paramCount++}`);
+      values.push(null);
+    }
+
+    if (bannedUntil) {
+      updates.push(`banned_until = $${paramCount++}`);
+      values.push(bannedUntil);
+    } else {
+      updates.push(`banned_until = $${paramCount++}`);
+      values.push(null);
+    }
+
+    values.push(id);
+
+    const result = await query(
+      `UPDATE users SET ${updates.join(", ")} WHERE id = $${paramCount} RETURNING *`,
+      values
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    await logAdminAction(
+      adminId,
+      isBanned ? "BAN_USER" : "UNBAN_USER",
+      "user",
+      parseInt(id),
+      isBanned ? `Banned user: ${result.rows[0].username}` : `Unbanned user: ${result.rows[0].username}`
+    );
+
+    res.json({
+      success: true,
+      user: result.rows[0],
+      message: isBanned ? "User banned successfully" : "User unbanned successfully",
+    });
+  } catch (error) {
+    console.error("Error updating user ban status:", error);
+    res.status(500).json({ error: "Failed to update user ban status" });
+  }
+});
+
+// POST /api/admin/users/:id/warn - Warn a user
+app.post("/api/admin/users/:id/warn", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { warningReason, userId } = req.body;
+    const adminId = parseInt(userId, 10);
+
+    if (!warningReason) {
+      return res.status(400).json({ error: "Warning reason is required" });
+    }
+
+    const result = await query(
+      `INSERT INTO user_warnings (user_id, warning_reason, warned_by)
+       VALUES ($1, $2, $3)
+       RETURNING *`,
+      [id, warningReason, adminId]
+    );
+
+    await logAdminAction(adminId, "WARN_USER", "user", parseInt(id), `Warned user ${id}: ${warningReason}`);
+
+    res.status(201).json({
+      success: true,
+      warning: result.rows[0],
+      message: "User warned successfully",
+    });
+  } catch (error) {
+    console.error("Error warning user:", error);
+    res.status(500).json({ error: "Failed to warn user" });
+  }
+});
+
+// ========== Comments & Ratings Moderation ==========
+
+// GET /api/admin/comments/flagged - Get all flagged comments
+app.get("/api/admin/comments/flagged", requireAdmin, async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT c.*, u.username, m.title as movie_title
+       FROM comments c
+       JOIN users u ON c.user_id = u.id
+       JOIN movies m ON c.movie_id = m.id
+       WHERE c.is_flagged = true
+       ORDER BY c.created_at DESC`
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Error fetching flagged comments:", error);
+    res.status(500).json({ error: "Failed to fetch flagged comments" });
+  }
+});
+
+// GET /api/admin/comments - Get all comments with moderation info
+app.get("/api/admin/comments", requireAdmin, async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT c.*, u.username, m.title as movie_title
+       FROM comments c
+       JOIN users u ON c.user_id = u.id
+       JOIN movies m ON c.movie_id = m.id
+       ORDER BY c.created_at DESC`
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Error fetching comments:", error);
+    res.status(500).json({ error: "Failed to fetch comments" });
+  }
+});
+
+// DELETE /api/admin/comments/:id - Delete a comment
+app.delete("/api/admin/comments/:id", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userId } = req.body;
+    const adminId = parseInt(userId, 10);
+
+    const commentResult = await query("SELECT * FROM comments WHERE id = $1", [id]);
+    if (commentResult.rows.length === 0) {
+      return res.status(404).json({ error: "Comment not found" });
+    }
+
+    await query("DELETE FROM comments WHERE id = $1", [id]);
+    await logAdminAction(adminId, "DELETE_COMMENT", "comment", parseInt(id), `Deleted comment ${id}`);
+
+    res.json({
+      success: true,
+      message: "Comment deleted successfully",
+    });
+  } catch (error) {
+    console.error("Error deleting comment:", error);
+    res.status(500).json({ error: "Failed to delete comment" });
+  }
+});
+
+// POST /api/admin/comments/:id/unflag - Unflag a comment
+app.post("/api/admin/comments/:id/unflag", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userId } = req.body;
+    const adminId = parseInt(userId, 10);
+
+    const result = await query(
+      `UPDATE comments SET is_flagged = false, flagged_reason = null WHERE id = $1 RETURNING *`,
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Comment not found" });
+    }
+
+    await logAdminAction(adminId, "UNFLAG_COMMENT", "comment", parseInt(id), `Unflagged comment ${id}`);
+
+    res.json({
+      success: true,
+      comment: result.rows[0],
+      message: "Comment unflagged successfully",
+    });
+  } catch (error) {
+    console.error("Error unflagging comment:", error);
+    res.status(500).json({ error: "Failed to unflag comment" });
+  }
+});
+
+// GET /api/admin/movies/:id/ratings - Get rating stats for a movie
+app.get("/api/admin/movies/:id/ratings", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [stats, ratings] = await Promise.all([
+      query(
+        `SELECT 
+         COUNT(*) as total_ratings,
+         AVG(rating) as average_rating,
+         COUNT(CASE WHEN rating = 5 THEN 1 END) as five_star,
+         COUNT(CASE WHEN rating = 4 THEN 1 END) as four_star,
+         COUNT(CASE WHEN rating = 3 THEN 1 END) as three_star,
+         COUNT(CASE WHEN rating = 2 THEN 1 END) as two_star,
+         COUNT(CASE WHEN rating = 1 THEN 1 END) as one_star
+         FROM ratings WHERE movie_id = $1`,
+        [id]
+      ),
+      query(
+        `SELECT r.*, u.username FROM ratings r JOIN users u ON r.user_id = u.id WHERE r.movie_id = $1 ORDER BY r.created_at DESC`,
+        [id]
+      ),
+    ]);
+
+    res.json({
+      stats: stats.rows[0],
+      ratings: ratings.rows,
+    });
+  } catch (error) {
+    console.error("Error fetching rating stats:", error);
+    res.status(500).json({ error: "Failed to fetch rating stats" });
+  }
+});
+
+// ========== Watchlist & Favorites Overview ==========
+
+// GET /api/admin/movies/popular - Get most favorited and watchlisted movies
+app.get("/api/admin/movies/popular", requireAdmin, async (req, res) => {
+  try {
+    const [favourites, watchlist] = await Promise.all([
+      query(
+        `SELECT m.*, COUNT(f.id) as favourite_count
+         FROM movies m
+         LEFT JOIN favourites f ON m.id = f.movie_id
+         GROUP BY m.id
+         ORDER BY favourite_count DESC
+         LIMIT 20`
+      ),
+      query(
+        `SELECT m.*, COUNT(w.id) as watchlist_count
+         FROM movies m
+         LEFT JOIN watchlist w ON m.id = w.movie_id
+         GROUP BY m.id
+         ORDER BY watchlist_count DESC
+         LIMIT 20`
+      ),
+    ]);
+
+    res.json({
+      mostFavourited: favourites.rows,
+      mostWatchlisted: watchlist.rows,
+    });
+  } catch (error) {
+    console.error("Error fetching popular movies:", error);
+    res.status(500).json({ error: "Failed to fetch popular movies" });
+  }
+});
+
+// GET /api/recommendations/:userId - Get personalized movie recommendations
+app.get("/api/recommendations/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const userIdNum = parseInt(userId, 10);
+
+    if (isNaN(userIdNum)) {
+      return res.status(400).json({ error: "Invalid user ID" });
+    }
+
+    const recommendations = await getCachedRecommendations(userIdNum);
+    res.json(recommendations);
+  } catch (error) {
+    console.error("Error fetching recommendations:", error);
+    res.status(500).json({ error: "Failed to fetch recommendations" });
+  }
+});
+
+// DELETE /api/admin/users/:userId/favourites/:movieId - Remove movie from user's favourites
+app.delete("/api/admin/users/:userId/favourites/:movieId", requireAdmin, async (req, res) => {
+  try {
+    const { userId, movieId } = req.params;
+    const { userId: adminUserId } = req.body;
+    const adminId = parseInt(adminUserId, 10);
+
+    await query("DELETE FROM favourites WHERE user_id = $1 AND movie_id = $2", [userId, movieId]);
+    await logAdminAction(adminId, "REMOVE_FAVOURITE", "favourite", parseInt(movieId), `Removed favourite from user ${userId}`);
+
+    res.json({
+      success: true,
+      message: "Favourite removed successfully",
+    });
+  } catch (error) {
+    console.error("Error removing favourite:", error);
+    res.status(500).json({ error: "Failed to remove favourite" });
+  }
+});
+
+// DELETE /api/admin/users/:userId/watchlist/:movieId - Remove movie from user's watchlist
+app.delete("/api/admin/users/:userId/watchlist/:movieId", requireAdmin, async (req, res) => {
+  try {
+    const { userId, movieId } = req.params;
+    const { userId: adminUserId } = req.body;
+    const adminId = parseInt(adminUserId, 10);
+
+    await query("DELETE FROM watchlist WHERE user_id = $1 AND movie_id = $2", [userId, movieId]);
+    await logAdminAction(adminId, "REMOVE_WATCHLIST", "watchlist", parseInt(movieId), `Removed watchlist item from user ${userId}`);
+
+    res.json({
+      success: true,
+      message: "Watchlist item removed successfully",
+    });
+  } catch (error) {
+    console.error("Error removing watchlist item:", error);
+    res.status(500).json({ error: "Failed to remove watchlist item" });
+  }
+});
+
+// ============================================
+// MOVIE QUIZ ENDPOINTS
+// ============================================
+
+// GET /api/movies/:id/quiz - Get quiz questions for a movie from database
+app.get("/api/movies/:id/quiz", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const movieId = parseInt(id, 10);
+
+    if (isNaN(movieId)) {
+      return res.status(400).json({ error: "Invalid movie ID" });
+    }
+
+    const questions = await getQuizQuestions(movieId);
+    
+    // Questions are now auto-generated if missing, so this should rarely happen
+    if (!questions || questions.length === 0) {
+      return res.status(404).json({ 
+        error: "No quiz available for this movie",
+        message: "Unable to generate quiz questions for this movie"
+      });
+    }
+    
+    res.json(questions);
+  } catch (error) {
+    console.error("Error fetching quiz questions:", error);
+    res.status(500).json({ 
+      error: "Failed to fetch quiz questions",
+      message: error.message 
+    });
+  }
+});
+
+// POST /api/movies/:id/quiz/submit - Submit quiz results
+app.post("/api/movies/:id/quiz/submit", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userId, score, totalQuestions, answers } = req.body;
+    
+    const movieId = parseInt(id, 10);
+    if (isNaN(movieId)) {
+      return res.status(400).json({ error: "Invalid movie ID" });
+    }
+
+    if (score === undefined || totalQuestions === undefined) {
+      return res.status(400).json({ error: "Missing required fields: score and totalQuestions" });
+    }
+
+    const result = await submitQuizResult(
+      userId || null,
+      movieId,
+      parseInt(score),
+      parseInt(totalQuestions),
+      answers
+    );
+
+    res.json({
+      success: true,
+      result: {
+        id: result.id,
+        score: result.score,
+        totalQuestions: result.total_questions,
+        percentage: Math.round((result.score / result.total_questions) * 100),
+        timestamp: result.timestamp,
+      },
+    });
+  } catch (error) {
+    console.error("Error submitting quiz result:", error);
+    res.status(500).json({ 
+      error: "Failed to submit quiz result",
+      message: error.message 
+    });
+  }
+});
+
+// POST /api/movies/:id/quiz/create - Admin endpoint to create/update quiz (for future admin panel)
+app.post("/api/movies/:id/quiz/create", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { questions } = req.body;
+    
+    const movieId = parseInt(id, 10);
+    if (isNaN(movieId)) {
+      return res.status(400).json({ error: "Invalid movie ID" });
+    }
+
+    if (!questions || !Array.isArray(questions) || questions.length === 0) {
+      return res.status(400).json({ error: "Questions must be a non-empty array" });
+    }
+
+    const quiz = await createOrUpdateQuiz(movieId, questions);
+    
+    res.json({
+      success: true,
+      quiz: {
+        id: quiz.id,
+        movieId: quiz.movie_id,
+        updatedAt: quiz.updated_at,
+      },
+    });
+  } catch (error) {
+    console.error("Error creating/updating quiz:", error);
+    res.status(500).json({ 
+      error: "Failed to create/update quiz",
+      message: error.message 
+    });
+  }
+});
+
+// ============================================
+// MOVIE BATTLE ENDPOINTS
+// ============================================
+
+// GET /api/movie-battle/current - Get or create today's battle (new endpoint)
+app.get("/api/movie-battle/current", async (req, res) => {
+  try {
+    const battle = await getOrCreateDailyBattle();
+    const userId = req.query.userId ? parseInt(req.query.userId, 10) : null;
+    
+    let hasVoted = false;
+    if (userId && !isNaN(userId)) {
+      hasVoted = await hasUserVoted(battle.id, userId);
+    }
+
+    res.json({
+      ...battle,
+      hasVoted,
+    });
+  } catch (error) {
+    console.error("Error fetching daily battle:", error);
+    res.status(500).json({ 
+      error: "Failed to fetch daily battle",
+      message: error.message 
+    });
+  }
+});
+
+// GET /api/battle/daily - Get or create today's battle (backward compatibility)
+app.get("/api/battle/daily", async (req, res) => {
+  try {
+    const battle = await getOrCreateDailyBattle();
+    const userId = req.query.userId ? parseInt(req.query.userId, 10) : null;
+    
+    let hasVoted = false;
+    if (userId && !isNaN(userId)) {
+      hasVoted = await hasUserVoted(battle.id, userId);
+    }
+
+    res.json({
+      ...battle,
+      hasVoted,
+    });
+  } catch (error) {
+    console.error("Error fetching daily battle:", error);
+    res.status(500).json({ 
+      error: "Failed to fetch daily battle",
+      message: error.message 
+    });
+  }
+});
+
+// POST /api/movie-battle/vote - Submit a vote (new endpoint)
+app.post("/api/movie-battle/vote", async (req, res) => {
+  try {
+    const { battleId, userId, votedForMovieId } = req.body;
+
+    if (!battleId || !votedForMovieId) {
+      return res.status(400).json({ error: "Missing required fields: battleId and votedForMovieId" });
+    }
+
+    const userIdNum = userId ? parseInt(userId, 10) : null;
+    const result = await submitVote(parseInt(battleId, 10), userIdNum, parseInt(votedForMovieId, 10));
+
+    res.json({
+      success: true,
+      ...result,
+    });
+  } catch (error) {
+    console.error("Error submitting vote:", error);
+    res.status(500).json({ 
+      error: "Failed to submit vote",
+      message: error.message 
+    });
+  }
+});
+
+// POST /api/battle/vote - Submit a vote (backward compatibility)
+app.post("/api/battle/vote", async (req, res) => {
+  try {
+    const { battleId, userId, votedForMovieId } = req.body;
+
+    if (!battleId || !votedForMovieId) {
+      return res.status(400).json({ error: "Missing required fields: battleId and votedForMovieId" });
+    }
+
+    const userIdNum = userId ? parseInt(userId, 10) : null;
+    const result = await submitVote(parseInt(battleId, 10), userIdNum, parseInt(votedForMovieId, 10));
+
+    res.json({
+      success: true,
+      ...result,
+    });
+  } catch (error) {
+    console.error("Error submitting vote:", error);
+    res.status(500).json({ 
+      error: "Failed to submit vote",
+      message: error.message 
+    });
+  }
+});
+
+// GET /api/movie-battle/leaderboard - Get battle leaderboard
+app.get("/api/movie-battle/leaderboard", async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 10;
+    const leaderboard = await getBattleLeaderboard(limit);
+    res.json(leaderboard);
+  } catch (error) {
+    console.error("Error fetching battle leaderboard:", error);
+    res.status(500).json({ 
+      error: "Failed to fetch leaderboard",
+      message: error.message 
+    });
+  }
+});
+
+// GET /api/battle/yesterday-winner - Get yesterday's winner (kept for backward compatibility)
+app.get("/api/battle/yesterday-winner", async (req, res) => {
+  try {
+    const winner = await getYesterdayWinner();
+    res.json(winner);
+  } catch (error) {
+    console.error("Error fetching yesterday's winner:", error);
+    res.status(500).json({ 
+      error: "Failed to fetch yesterday's winner",
+      message: error.message 
+    });
+  }
+});
+
+// GET /api/battle/monthly-leader - Get current monthly leader
+app.get("/api/battle/monthly-leader", async (req, res) => {
+  try {
+    const leader = await getMonthlyLeader();
+    res.json(leader);
+  } catch (error) {
+    console.error("Error fetching monthly leader:", error);
+    res.status(500).json({ 
+      error: "Failed to fetch monthly leader",
+      message: error.message 
+    });
+  }
+});
+
+// GET /api/battle/movie/:id/stats - Get battle stats for a movie
+app.get("/api/battle/movie/:id/stats", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const movieId = parseInt(id, 10);
+
+    if (isNaN(movieId)) {
+      return res.status(400).json({ error: "Invalid movie ID" });
+    }
+
+    const stats = await getMovieBattleStats(movieId);
+    res.json(stats);
+  } catch (error) {
+    console.error("Error fetching movie battle stats:", error);
+    res.status(500).json({ 
+      error: "Failed to fetch movie battle stats",
+      message: error.message 
+    });
+  }
+});
+
+// ============================================
+// TRENDING & POPULAR VOTING ENDPOINTS
+// ============================================
+
+// GET /api/trending-movies - Get trending movies with vote counts
+app.get("/api/trending-movies", async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 5;
+    const userId = req.query.userId ? parseInt(req.query.userId, 10) : null;
+    
+    const movies = await getTrendingMovies(limit);
+    
+    // Get user's voting status if logged in
+    let userVotes = {};
+    if (userId && !isNaN(userId)) {
+      userVotes = await getUserVotingStatus(userId);
+    }
+
+    // Add hasVoted flag to each movie
+    const moviesWithVotes = movies.map(movie => ({
+      ...movie,
+      hasVoted: userVotes[movie.id] || false,
+    }));
+
+    res.json(moviesWithVotes);
+  } catch (error) {
+    console.error("Error fetching trending movies:", error);
+    res.status(500).json({ 
+      error: "Failed to fetch trending movies",
+      message: error.message 
+    });
+  }
+});
+
+// POST /api/trending-movies/vote - Submit a vote for a trending movie
+app.post("/api/trending-movies/vote", async (req, res) => {
+  try {
+    const { movieId, userId } = req.body;
+
+    if (!movieId) {
+      return res.status(400).json({ error: "Missing required field: movieId" });
+    }
+
+    const userIdNum = userId ? parseInt(userId, 10) : null;
+    const result = await submitTrendingVote(parseInt(movieId, 10), userIdNum);
+
+    res.json(result);
+  } catch (error) {
+    console.error("Error submitting trending vote:", error);
+    res.status(500).json({ 
+      error: "Failed to submit vote",
+      message: error.message 
+    });
+  }
+});
+
+// POST /api/trending-movies/add - Add a new movie to trending list
+app.post("/api/trending-movies/add", async (req, res) => {
+  try {
+    const { movieId, title, posterUrl, userId } = req.body;
+
+    if (!title && !movieId) {
+      return res.status(400).json({ error: "Either movieId or title is required" });
+    }
+
+    const userIdNum = userId ? parseInt(userId, 10) : null;
+    const movieIdNum = movieId ? parseInt(movieId, 10) : null;
+    
+    const newMovie = await addTrendingMovie(movieIdNum, title, posterUrl, userIdNum);
+
+    res.json({
+      success: true,
+      movie: newMovie,
+    });
+  } catch (error) {
+    console.error("Error adding trending movie:", error);
+    res.status(500).json({ 
+      error: "Failed to add movie to trending list",
+      message: error.message 
+    });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Backend running on http://localhost:${PORT}`);
   console.log(
@@ -1469,6 +2668,12 @@ app.listen(PORT, () => {
   console.log(`🖼️  Poster endpoints ready: /api/movies/:id/update-poster, /api/movies/update-all-posters`);
   console.log(`🎭 Actor endpoints ready: /api/movies/:id/actors`);
   console.log(`🎫 Booking endpoints ready: /api/movies/now-playing, /api/movies/upcoming, /api/snacks, /api/showings, /api/bookings`);
+  console.log(`🎯 Quiz endpoints ready: /api/movies/:id/quiz`);
+  console.log(`⚔️  Battle endpoints ready: /api/movie-battle/current, /api/movie-battle/vote, /api/movie-battle/leaderboard`);
+  console.log(`🎯 Quiz endpoints ready: /api/movies/:id/quiz, /api/movies/:id/quiz/submit`);
+  console.log(`🔥 Trending endpoints ready: /api/trending-movies, /api/trending-movies/vote, /api/trending-movies/add`);
+  console.log(`☁️  Cloudinary upload endpoints ready: /api/upload, /api/upload/multiple, /api/upload/:publicId, /api/upload/test`);
+  console.log(`👑 Admin endpoints ready: /api/admin/* (requires admin authentication)`);
   
   // Start the scheduler for automatic daily updates
   startScheduler();
