@@ -18,6 +18,12 @@ const {
   submitQuizResult,
   getUserQuizResults,
   getMovieQuizStats,
+  getAllQuizzes,
+  getQuizById,
+  deleteQuiz,
+  deleteQuestionFromQuiz,
+  getAllQuizResults,
+  getQuizStatisticsOverview,
 } = require("./quizService");
 const {
   getOrCreateDailyBattle,
@@ -67,13 +73,31 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 
 // Configure CORS to allow frontend access
+// Support both development and production origins
+const allowedOrigins = [
+  "http://localhost:5173", // Vite default port
+  "http://localhost:3000", // Alternative React port
+  "http://localhost:5174", // Vite alternative port
+];
+
+// Add production origins from environment variable (comma-separated)
+if (process.env.ALLOWED_ORIGINS) {
+  const productionOrigins = process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim());
+  allowedOrigins.push(...productionOrigins);
+}
+
 app.use(
   cors({
-    origin: [
-      "http://localhost:5173", // Vite default port
-      "http://localhost:3000", // Alternative React port
-      "http://localhost:5174", // Vite alternative port
-    ],
+    origin: (origin, callback) => {
+      // Allow requests with no origin (mobile apps, Postman, etc.)
+      if (!origin) return callback(null, true);
+      
+      if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development') {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
@@ -2405,6 +2429,222 @@ app.post("/api/movies/:id/quiz/create", requireAdmin, async (req, res) => {
     console.error("Error creating/updating quiz:", error);
     res.status(500).json({ 
       error: "Failed to create/update quiz",
+      message: error.message 
+    });
+  }
+});
+
+// ============================================
+// ADMIN QUIZ MANAGEMENT ENDPOINTS
+// ============================================
+
+// GET /api/admin/quizzes - Get all quizzes with movie information
+app.get("/api/admin/quizzes", requireAdmin, async (req, res) => {
+  try {
+    const quizzes = await getAllQuizzes();
+    res.json(quizzes);
+  } catch (error) {
+    console.error("Error fetching all quizzes:", error);
+    res.status(500).json({ 
+      error: "Failed to fetch quizzes",
+      message: error.message 
+    });
+  }
+});
+
+// GET /api/admin/quizzes/:id - Get a specific quiz by ID
+app.get("/api/admin/quizzes/:id", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const quizId = parseInt(id, 10);
+    
+    if (isNaN(quizId)) {
+      return res.status(400).json({ error: "Invalid quiz ID" });
+    }
+
+    const quiz = await getQuizById(quizId);
+    res.json(quiz);
+  } catch (error) {
+    console.error("Error fetching quiz:", error);
+    if (error.message === "Quiz not found") {
+      return res.status(404).json({ error: "Quiz not found" });
+    }
+    res.status(500).json({ 
+      error: "Failed to fetch quiz",
+      message: error.message 
+    });
+  }
+});
+
+// POST /api/admin/quizzes - Create a new quiz
+app.post("/api/admin/quizzes", requireAdmin, async (req, res) => {
+  try {
+    const { movieId, questions } = req.body;
+    const { userId } = req.body;
+    const adminId = parseInt(userId, 10);
+    
+    if (!movieId) {
+      return res.status(400).json({ error: "Movie ID is required" });
+    }
+
+    if (!questions || !Array.isArray(questions) || questions.length === 0) {
+      return res.status(400).json({ error: "Questions must be a non-empty array" });
+    }
+
+    const quiz = await createOrUpdateQuiz(movieId, questions);
+    await logAdminAction(adminId, "CREATE_QUIZ", "quiz", quiz.id, `Created quiz for movie ID ${movieId}`);
+    
+    res.status(201).json({
+      success: true,
+      quiz: {
+        id: quiz.id,
+        movieId: quiz.movie_id,
+        updatedAt: quiz.updated_at,
+      },
+    });
+  } catch (error) {
+    console.error("Error creating quiz:", error);
+    res.status(500).json({ 
+      error: "Failed to create quiz",
+      message: error.message 
+    });
+  }
+});
+
+// PUT /api/admin/quizzes/:id - Update a quiz
+app.put("/api/admin/quizzes/:id", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { questions } = req.body;
+    const { userId } = req.body;
+    const adminId = parseInt(userId, 10);
+    
+    const quizId = parseInt(id, 10);
+    if (isNaN(quizId)) {
+      return res.status(400).json({ error: "Invalid quiz ID" });
+    }
+
+    // Get the quiz to find movieId
+    const existingQuiz = await getQuizById(quizId);
+    
+    if (!questions || !Array.isArray(questions) || questions.length === 0) {
+      return res.status(400).json({ error: "Questions must be a non-empty array" });
+    }
+
+    const quiz = await createOrUpdateQuiz(existingQuiz.movieId, questions);
+    await logAdminAction(adminId, "UPDATE_QUIZ", "quiz", quizId, `Updated quiz for movie ID ${existingQuiz.movieId}`);
+    
+    res.json({
+      success: true,
+      quiz: {
+        id: quiz.id,
+        movieId: quiz.movie_id,
+        updatedAt: quiz.updated_at,
+      },
+    });
+  } catch (error) {
+    console.error("Error updating quiz:", error);
+    if (error.message === "Quiz not found") {
+      return res.status(404).json({ error: "Quiz not found" });
+    }
+    res.status(500).json({ 
+      error: "Failed to update quiz",
+      message: error.message 
+    });
+  }
+});
+
+// DELETE /api/admin/quizzes/:id - Delete a quiz
+app.delete("/api/admin/quizzes/:id", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userId } = req.body;
+    const adminId = parseInt(userId, 10);
+    
+    const quizId = parseInt(id, 10);
+    if (isNaN(quizId)) {
+      return res.status(400).json({ error: "Invalid quiz ID" });
+    }
+
+    const result = await deleteQuiz(quizId);
+    await logAdminAction(adminId, "DELETE_QUIZ", "quiz", quizId, `Deleted quiz ID ${quizId}`);
+    
+    res.json({
+      success: true,
+      message: "Quiz deleted successfully",
+    });
+  } catch (error) {
+    console.error("Error deleting quiz:", error);
+    if (error.message === "Quiz not found") {
+      return res.status(404).json({ error: "Quiz not found" });
+    }
+    res.status(500).json({ 
+      error: "Failed to delete quiz",
+      message: error.message 
+    });
+  }
+});
+
+// DELETE /api/admin/quizzes/:id/questions/:questionIndex - Delete a specific question from a quiz
+app.delete("/api/admin/quizzes/:id/questions/:questionIndex", requireAdmin, async (req, res) => {
+  try {
+    const { id, questionIndex } = req.params;
+    const { userId } = req.body;
+    const adminId = parseInt(userId, 10);
+    
+    const quizId = parseInt(id, 10);
+    const qIndex = parseInt(questionIndex, 10);
+    
+    if (isNaN(quizId)) {
+      return res.status(400).json({ error: "Invalid quiz ID" });
+    }
+    if (isNaN(qIndex)) {
+      return res.status(400).json({ error: "Invalid question index" });
+    }
+
+    const result = await deleteQuestionFromQuiz(quizId, qIndex);
+    await logAdminAction(adminId, "DELETE_QUIZ_QUESTION", "quiz", quizId, `Deleted question ${qIndex} from quiz ${quizId}`);
+    
+    res.json({
+      success: true,
+      message: "Question deleted successfully",
+      remainingQuestions: result.remainingQuestions,
+    });
+  } catch (error) {
+    console.error("Error deleting question:", error);
+    if (error.message === "Quiz not found" || error.message === "Question index out of range") {
+      return res.status(404).json({ error: error.message });
+    }
+    res.status(500).json({ 
+      error: "Failed to delete question",
+      message: error.message 
+    });
+  }
+});
+
+// GET /api/admin/quiz-results - Get all quiz results (read-only)
+app.get("/api/admin/quiz-results", requireAdmin, async (req, res) => {
+  try {
+    const results = await getAllQuizResults();
+    res.json(results);
+  } catch (error) {
+    console.error("Error fetching quiz results:", error);
+    res.status(500).json({ 
+      error: "Failed to fetch quiz results",
+      message: error.message 
+    });
+  }
+});
+
+// GET /api/admin/quiz-statistics - Get quiz statistics overview
+app.get("/api/admin/quiz-statistics", requireAdmin, async (req, res) => {
+  try {
+    const stats = await getQuizStatisticsOverview();
+    res.json(stats);
+  } catch (error) {
+    console.error("Error fetching quiz statistics:", error);
+    res.status(500).json({ 
+      error: "Failed to fetch quiz statistics",
       message: error.message 
     });
   }

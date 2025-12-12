@@ -358,10 +358,212 @@ async function getMovieQuizStats(movieId) {
   }
 }
 
+/**
+ * Get all quizzes with movie information (Admin function)
+ */
+async function getAllQuizzes() {
+  try {
+    const result = await query(
+      `SELECT 
+        q.id,
+        q.movie_id,
+        m.title as movie_title,
+        q.questions,
+        q.created_at,
+        q.updated_at
+       FROM movie_quizzes q
+       JOIN movies m ON q.movie_id = m.id
+       ORDER BY q.updated_at DESC`
+    );
+
+    return result.rows.map(row => ({
+      id: row.id,
+      movieId: row.movie_id,
+      movieTitle: row.movie_title,
+      questions: typeof row.questions === 'string' ? JSON.parse(row.questions) : row.questions,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      questionCount: Array.isArray(row.questions) ? row.questions.length : (typeof row.questions === 'string' ? JSON.parse(row.questions).length : 0)
+    }));
+  } catch (error) {
+    console.error("Error fetching all quizzes:", error);
+    throw error;
+  }
+}
+
+/**
+ * Get a specific quiz by ID (Admin function)
+ */
+async function getQuizById(quizId) {
+  try {
+    const result = await query(
+      `SELECT 
+        q.id,
+        q.movie_id,
+        m.title as movie_title,
+        q.questions,
+        q.created_at,
+        q.updated_at
+       FROM movie_quizzes q
+       JOIN movies m ON q.movie_id = m.id
+       WHERE q.id = $1`,
+      [quizId]
+    );
+
+    if (result.rows.length === 0) {
+      throw new Error("Quiz not found");
+    }
+
+    const row = result.rows[0];
+    return {
+      id: row.id,
+      movieId: row.movie_id,
+      movieTitle: row.movie_title,
+      questions: typeof row.questions === 'string' ? JSON.parse(row.questions) : row.questions,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    };
+  } catch (error) {
+    console.error("Error fetching quiz by ID:", error);
+    throw error;
+  }
+}
+
+/**
+ * Delete a quiz (Admin function)
+ */
+async function deleteQuiz(quizId) {
+  try {
+    const result = await query(
+      `DELETE FROM movie_quizzes WHERE id = $1 RETURNING id`,
+      [quizId]
+    );
+
+    if (result.rows.length === 0) {
+      throw new Error("Quiz not found");
+    }
+
+    return { success: true, deletedId: result.rows[0].id };
+  } catch (error) {
+    console.error("Error deleting quiz:", error);
+    throw error;
+  }
+}
+
+/**
+ * Delete a specific question from a quiz (Admin function)
+ */
+async function deleteQuestionFromQuiz(quizId, questionIndex) {
+  try {
+    // Get the current quiz
+    const quizResult = await query(
+      `SELECT questions FROM movie_quizzes WHERE id = $1`,
+      [quizId]
+    );
+
+    if (quizResult.rows.length === 0) {
+      throw new Error("Quiz not found");
+    }
+
+    let questions = quizResult.rows[0].questions;
+    if (typeof questions === 'string') {
+      questions = JSON.parse(questions);
+    }
+
+    if (!Array.isArray(questions)) {
+      throw new Error("Invalid questions format");
+    }
+
+    if (questionIndex < 0 || questionIndex >= questions.length) {
+      throw new Error("Question index out of range");
+    }
+
+    // Remove the question at the specified index
+    questions.splice(questionIndex, 1);
+
+    // Update the quiz
+    await query(
+      `UPDATE movie_quizzes 
+       SET questions = $1, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2`,
+      [JSON.stringify(questions), quizId]
+    );
+
+    return { success: true, remainingQuestions: questions.length };
+  } catch (error) {
+    console.error("Error deleting question from quiz:", error);
+    throw error;
+  }
+}
+
+/**
+ * Get all quiz results (Admin function - read-only)
+ */
+async function getAllQuizResults() {
+  try {
+    const result = await query(
+      `SELECT 
+        qr.id,
+        qr.user_id,
+        u.username,
+        qr.movie_id,
+        m.title as movie_title,
+        qr.score,
+        qr.total_questions,
+        qr.timestamp
+       FROM quiz_results qr
+       LEFT JOIN users u ON qr.user_id = u.id
+       JOIN movies m ON qr.movie_id = m.id
+       ORDER BY qr.timestamp DESC
+       LIMIT 1000`
+    );
+
+    return result.rows;
+  } catch (error) {
+    console.error("Error fetching all quiz results:", error);
+    throw error;
+  }
+}
+
+/**
+ * Get quiz statistics overview (Admin function)
+ */
+async function getQuizStatisticsOverview() {
+  try {
+    const result = await query(
+      `SELECT 
+        COUNT(DISTINCT q.id) as total_quizzes,
+        COUNT(DISTINCT qr.movie_id) as movies_with_quizzes,
+        COUNT(qr.id) as total_attempts,
+        COUNT(DISTINCT qr.user_id) as unique_users,
+        AVG(qr.score::DECIMAL / qr.total_questions::DECIMAL * 100) as overall_average_score
+       FROM movie_quizzes q
+       LEFT JOIN quiz_results qr ON q.movie_id = qr.movie_id`
+    );
+
+    return {
+      totalQuizzes: parseInt(result.rows[0]?.total_quizzes) || 0,
+      moviesWithQuizzes: parseInt(result.rows[0]?.movies_with_quizzes) || 0,
+      totalAttempts: parseInt(result.rows[0]?.total_attempts) || 0,
+      uniqueUsers: parseInt(result.rows[0]?.unique_users) || 0,
+      overallAverageScore: parseFloat(result.rows[0]?.overall_average_score) || 0
+    };
+  } catch (error) {
+    console.error("Error fetching quiz statistics overview:", error);
+    throw error;
+  }
+}
+
 module.exports = {
   getQuizQuestions,
   createOrUpdateQuiz,
   submitQuizResult,
   getUserQuizResults,
   getMovieQuizStats,
+  getAllQuizzes,
+  getQuizById,
+  deleteQuiz,
+  deleteQuestionFromQuiz,
+  getAllQuizResults,
+  getQuizStatisticsOverview,
 };

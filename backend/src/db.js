@@ -8,12 +8,24 @@ if (!connectionString) {
 }
 
 // Create a connection pool (reuses connections efficiently)
-const pool = new Pool({
+// SSL configuration: use SSL in production (Google Cloud SQL), optional in development
+const poolConfig = {
   connectionString,
-  ssl: {
-    rejectUnauthorized: false, // Required for Neon
-  },
-});
+};
+
+// Enable SSL for production (Google Cloud SQL requires SSL)
+if (process.env.NODE_ENV === 'production' || process.env.DATABASE_SSL === 'true') {
+  poolConfig.ssl = {
+    rejectUnauthorized: false, // Required for Google Cloud SQL and Neon
+  };
+} else if (connectionString && connectionString.includes('sslmode=require')) {
+  // If connection string explicitly requires SSL
+  poolConfig.ssl = {
+    rejectUnauthorized: false,
+  };
+}
+
+const pool = new Pool(poolConfig);
 
 // Test the connection
 pool.on("connect", () => {

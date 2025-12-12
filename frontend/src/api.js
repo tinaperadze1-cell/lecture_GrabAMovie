@@ -3,7 +3,8 @@
  * All database access goes through this module
  */
 
-const API_BASE_URL = "http://localhost:4000/api";
+// Use environment variable for API base URL, fallback to localhost for development
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000/api";
 
 /**
  * Get personalized movie recommendations for a user
@@ -1395,6 +1396,142 @@ export const adminRemoveWatchlist = async (userId, movieId, adminUserId) => {
     return data;
   } catch (error) {
     console.error("API Error - adminRemoveWatchlist:", error);
+    throw error;
+  }
+};
+
+/**
+ * Admin: Get all quizzes
+ */
+export const adminGetAllQuizzes = async (userId) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/admin/quizzes?userId=${userId}`);
+    if (!response.ok) throw new Error(`Failed to fetch quizzes: ${response.statusText}`);
+    return await response.json();
+  } catch (error) {
+    console.error("API Error - adminGetAllQuizzes:", error);
+    throw error;
+  }
+};
+
+/**
+ * Admin: Get a specific quiz by ID
+ */
+export const adminGetQuizById = async (quizId, userId) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/admin/quizzes/${quizId}?userId=${userId}`);
+    if (!response.ok) throw new Error(`Failed to fetch quiz: ${response.statusText}`);
+    return await response.json();
+  } catch (error) {
+    console.error("API Error - adminGetQuizById:", error);
+    throw error;
+  }
+};
+
+/**
+ * Admin: Create a new quiz
+ */
+export const adminCreateQuiz = async (quizData, userId) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/admin/quizzes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...quizData, userId }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Failed to create quiz");
+    return data;
+  } catch (error) {
+    console.error("API Error - adminCreateQuiz:", error);
+    throw error;
+  }
+};
+
+/**
+ * Admin: Update a quiz
+ */
+export const adminUpdateQuiz = async (quizId, quizData, userId) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/admin/quizzes/${quizId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...quizData, userId }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Failed to update quiz");
+    return data;
+  } catch (error) {
+    console.error("API Error - adminUpdateQuiz:", error);
+    throw error;
+  }
+};
+
+/**
+ * Admin: Delete a quiz
+ */
+export const adminDeleteQuiz = async (quizId, userId) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/admin/quizzes/${quizId}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Failed to delete quiz");
+    return data;
+  } catch (error) {
+    console.error("API Error - adminDeleteQuiz:", error);
+    throw error;
+  }
+};
+
+/**
+ * Admin: Delete a question from a quiz
+ */
+export const adminDeleteQuizQuestion = async (quizId, questionIndex, userId) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/admin/quizzes/${quizId}/questions/${questionIndex}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Failed to delete question");
+    return data;
+  } catch (error) {
+    console.error("API Error - adminDeleteQuizQuestion:", error);
+    throw error;
+  }
+};
+
+/**
+ * Admin: Get all quiz results (read-only)
+ */
+export const adminGetQuizResults = async (userId) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/admin/quiz-results?userId=${userId}`);
+    if (!response.ok) throw new Error(`Failed to fetch quiz results: ${response.statusText}`);
+    return await response.json();
+  } catch (error) {
+    console.error("API Error - adminGetQuizResults:", error);
+    throw error;
+  }
+};
+
+/**
+ * Admin: Get quiz statistics overview
+ */
+export const adminGetQuizStatistics = async (userId) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/admin/quiz-statistics?userId=${userId}`);
+    if (!response.ok) throw new Error(`Failed to fetch quiz statistics: ${response.statusText}`);
+    return await response.json();
+  } catch (error) {
+    console.error("API Error - adminGetQuizStatistics:", error);
     throw error;
   }
 };

@@ -11,6 +11,8 @@ build/
 .env
 .env.local
 .env.*.local
+backend/.env
+frontend/.env
 
 # IDE
 .vscode/
@@ -27,3 +29,11 @@ Thumbs.db
 *.db
 *.sqlite
 
+# Google Cloud
+.gcloudignore
+backend/.gcloudignore
+
+# Deployment
+*.key
+*.pem
+*.crt
