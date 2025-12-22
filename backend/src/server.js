@@ -41,6 +41,7 @@ const {
   addTrendingMovie,
   getUserVotingStatus,
 } = require("./trendingService");
+const axios = require("axios");
 
 // Log TMDB API key status on server start (for debugging)
 const tmdbKey = process.env.TMDB_API_KEY;
@@ -1954,7 +1955,7 @@ app.delete("/api/admin/showings/:id", requireAdmin, async (req, res) => {
 app.get("/api/admin/bookings", requireAdmin, async (req, res) => {
   try {
     const result = await query(
-      `SELECT b.*, m.title as movie_title, u.username, s.showtime, s.theater_name
+      `SELECT b.*, m.title as movie_title, u.username, u.email as user_email, s.showtime, s.theater_name
        FROM bookings b
        JOIN movies m ON b.movie_id = m.id
        JOIN users u ON b.user_id = u.id
@@ -1965,6 +1966,197 @@ app.get("/api/admin/bookings", requireAdmin, async (req, res) => {
   } catch (error) {
     console.error("Error fetching bookings:", error);
     res.status(500).json({ error: "Failed to fetch bookings" });
+  }
+});
+
+// DELETE /api/admin/bookings/:id - Delete a booking (ticket) and notify n8n
+app.delete("/api/admin/bookings/:id", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userId, reason } = req.body;
+    const adminId = parseInt(userId, 10);
+
+    // Get full booking details before deletion
+    const bookingResult = await query(
+      `SELECT b.*, m.title as movie_title, u.username, u.email as user_email, s.showtime, s.theater_name
+       FROM bookings b
+       JOIN movies m ON b.movie_id = m.id
+       JOIN users u ON b.user_id = u.id
+       JOIN showings s ON b.showing_id = s.id
+       WHERE b.id = $1`,
+      [id]
+    );
+
+    if (bookingResult.rows.length === 0) {
+      return res.status(404).json({ error: "Booking not found" });
+    }
+
+    const booking = bookingResult.rows[0];
+
+    // Delete the booking
+    await query("DELETE FROM bookings WHERE id = $1", [id]);
+    
+    // Log admin action
+    await logAdminAction(
+      adminId,
+      "DELETE_BOOKING",
+      "booking",
+      parseInt(id),
+      `Deleted booking ${id} for movie: ${booking.movie_title}`
+    );
+
+    // Send webhook notification to n8n
+    // Use environment variable if set, otherwise use production webhook URL
+    // Note: webhook-test only works when workflow is in test mode and executed once
+    // For production, use the webhook URL without -test
+    const webhookUrl = process.env.N8N_WEBHOOK_URL || "https://tperadze.app.n8n.cloud/webhook/ticket-deleted";
+    const webhookPayload = {
+      ticketId: booking.id,
+      bookingReference: booking.booking_reference,
+      userId: booking.user_id,
+      userEmail: booking.user_email || "",
+      username: booking.username,
+      movieId: booking.movie_id,
+      movieTitle: booking.movie_title,
+      showingId: booking.showing_id,
+      showtime: booking.showtime,
+      theaterName: booking.theater_name,
+      totalAmount: booking.total_amount,
+      bookingDate: booking.booking_date,
+      status: booking.status,
+      deletionReason: reason || "No reason provided",
+      deletedBy: adminId,
+      deletedAt: new Date().toISOString(),
+    };
+
+    console.log(`📤 Attempting to send n8n webhook for booking ${id}...`);
+    console.log(`   URL: ${webhookUrl}`);
+    console.log(`   Payload:`, JSON.stringify(webhookPayload, null, 2));
+
+    try {
+      const webhookResponse = await axios.post(webhookUrl, webhookPayload, {
+        headers: {
+          "Content-Type": "application/json",
+        },
+        timeout: 10000, // 10 second timeout
+      });
+
+      console.log(`✅ n8n webhook notification sent successfully for deleted booking ${id}`);
+      console.log(`   Response status: ${webhookResponse.status}`);
+      console.log(`   Response data:`, webhookResponse.data);
+    } catch (webhookError) {
+      console.error(`❌ Error sending n8n webhook for booking ${id}:`);
+      if (webhookError.response) {
+        // The request was made and the server responded with a status code
+        // that falls out of the range of 2xx
+        console.error(`   Status: ${webhookError.response.status}`);
+        console.error(`   Data:`, webhookError.response.data);
+        console.error(`   Headers:`, webhookError.response.headers);
+      } else if (webhookError.request) {
+        // The request was made but no response was received
+        console.error(`   No response received from n8n webhook`);
+        console.error(`   Request:`, webhookError.request);
+      } else {
+        // Something happened in setting up the request that triggered an Error
+        console.error(`   Error:`, webhookError.message);
+      }
+      console.error(`   Full error:`, webhookError);
+      // Don't fail the deletion if webhook fails, just log it
+    }
+
+    res.json({
+      success: true,
+      message: "Booking deleted successfully",
+      webhookUrl: webhookUrl,
+      webhookPayload: webhookPayload,
+    });
+  } catch (error) {
+    console.error("Error deleting booking:", error);
+    res.status(500).json({ error: "Failed to delete booking" });
+  }
+});
+
+// POST /api/admin/test-webhook - Test n8n webhook (admin only)
+app.post("/api/admin/test-webhook", requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.body;
+    const adminId = parseInt(userId, 10);
+
+    const webhookUrl = process.env.N8N_WEBHOOK_URL || "https://tperadze.app.n8n.cloud/webhook/ticket-deleted";
+    const testPayload = {
+      ticketId: 999,
+      bookingReference: "TEST-BK-001",
+      userId: 1,
+      userEmail: "test@example.com",
+      username: "testuser",
+      movieId: 1,
+      movieTitle: "Test Movie",
+      showingId: 1,
+      showtime: new Date().toISOString(),
+      theaterName: "Test Theater",
+      totalAmount: 25.50,
+      bookingDate: new Date().toISOString(),
+      status: "confirmed",
+      deletionReason: "Test webhook",
+      deletedBy: adminId,
+      deletedAt: new Date().toISOString(),
+    };
+
+    console.log(`🧪 Testing n8n webhook...`);
+    console.log(`   URL: ${webhookUrl}`);
+    console.log(`   Payload:`, JSON.stringify(testPayload, null, 2));
+
+    try {
+      const webhookResponse = await axios.post(webhookUrl, testPayload, {
+        headers: {
+          "Content-Type": "application/json",
+        },
+        timeout: 10000,
+      });
+
+      console.log(`✅ Test webhook sent successfully`);
+      console.log(`   Response status: ${webhookResponse.status}`);
+      console.log(`   Response data:`, webhookResponse.data);
+
+      res.json({
+        success: true,
+        message: "Test webhook sent successfully",
+        webhookUrl: webhookUrl,
+        response: {
+          status: webhookResponse.status,
+          data: webhookResponse.data,
+        },
+      });
+    } catch (webhookError) {
+      console.error(`❌ Test webhook failed:`);
+      if (webhookError.response) {
+        console.error(`   Status: ${webhookError.response.status}`);
+        console.error(`   Data:`, webhookError.response.data);
+        res.status(webhookError.response.status).json({
+          success: false,
+          error: "Webhook test failed",
+          status: webhookError.response.status,
+          data: webhookError.response.data,
+        });
+      } else if (webhookError.request) {
+        console.error(`   No response received`);
+        res.status(500).json({
+          success: false,
+          error: "No response from webhook",
+          message: webhookError.message,
+        });
+      } else {
+        console.error(`   Error:`, webhookError.message);
+        res.status(500).json({
+          success: false,
+          error: "Webhook test error",
+          message: webhookError.message,
+        });
+      }
+    }
+  } catch (error) {
+    console.error("Error testing webhook:", error);
+    res.status(500).json({ error: "Failed to test webhook" });
   }
 });
 

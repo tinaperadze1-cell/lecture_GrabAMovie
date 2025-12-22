@@ -9,6 +9,7 @@ import {
   adminUpdateShowing,
   adminDeleteShowing,
   adminGetBookings,
+  adminDeleteBooking,
   adminGetUsers,
   adminGetUserActivity,
   adminBanUser,
@@ -454,6 +455,24 @@ function TicketManagement({ showings, bookings, movies, currentUser, onRefresh, 
     }
   };
 
+  const handleDeleteBooking = async (bookingId) => {
+    if (!window.confirm("Are you sure you want to delete this booking/ticket? This will send a notification email to the user.")) return;
+    
+    const reason = window.prompt("Please provide a reason for deleting this ticket (required):");
+    if (!reason || reason.trim() === "") {
+      onError("Deletion reason is required");
+      return;
+    }
+
+    try {
+      await adminDeleteBooking(bookingId, currentUser.id, reason.trim());
+      onSuccess("Booking/ticket deleted successfully! Notification email sent to user.");
+      onRefresh();
+    } catch (err) {
+      onError(err.message);
+    }
+  };
+
   return (
     <div className="admin-section">
       <div className="section-header">
@@ -525,9 +544,25 @@ function TicketManagement({ showings, bookings, movies, currentUser, onRefresh, 
         <h3>Recent Bookings</h3>
         {bookings.slice(0, 20).map((booking) => (
           <div key={booking.id} className="booking-item">
-            <strong>{booking.movie_title}</strong> - {booking.username}
-            <br />
-            {new Date(booking.booking_date).toLocaleString()} | ${booking.total_amount}
+            <div>
+              <strong>{booking.movie_title}</strong> - {booking.username}
+              {booking.user_email && <span> ({booking.user_email})</span>}
+              <br />
+              Booking #{booking.booking_reference}
+              <br />
+              {new Date(booking.booking_date).toLocaleString()} | ${booking.total_amount}
+              <br />
+              <small>Showtime: {new Date(booking.showtime).toLocaleString()} - {booking.theater_name}</small>
+            </div>
+            <div className="booking-actions">
+              <button 
+                onClick={() => handleDeleteBooking(booking.id)} 
+                className="btn-delete"
+                title="Delete booking/ticket"
+              >
+                Delete Ticket
+              </button>
+            </div>
           </div>
         ))}
       </div>

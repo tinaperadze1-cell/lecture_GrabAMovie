@@ -1197,6 +1197,31 @@ export const adminGetBookings = async (userId) => {
 };
 
 /**
+ * Admin: Delete a booking (ticket)
+ */
+export const adminDeleteBooking = async (bookingId, userId, reason) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/admin/bookings/${bookingId}`, {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ userId, reason }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || "Failed to delete booking");
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error("API Error - adminDeleteBooking:", error);
+    throw error;
+  }
+};
+
+/**
  * Admin: Get all users
  */
 export const adminGetUsers = async (userId) => {
